@@ -341,7 +341,7 @@ Partition.prototype.convexPartition = function(poly) {
       i23 = poly2.getNextI(i22);
       p3 = poly2.getPoint(i23);
 
-      if (this.isConvex(p1, p2, p3)) continue;
+      if (!this.isConvex(p1, p2, p3)) continue;
 
       p2 = poly1.getPoint(i12);
       i13 = poly1.getNextI(i12);
@@ -363,9 +363,15 @@ Partition.prototype.convexPartition = function(poly) {
         k++;
       }
 
-      triangles.splice(object_2_index, 1);
-      triangles[i] = newpoly;
-      poly1 = triangles[i];
+      if (s1 > object_2_index) {
+        triangles[s1] = newpoly;
+        poly1 = triangles[s1];
+        triangles.splice(object_2_index, 1);
+      } else {
+        triangles.splice(object_2_index, 1);
+        triangles[s1] = newpoly;
+        poly1 = triangles[s1];
+      }
       i11 = -1;
     }
   }
