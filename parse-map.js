@@ -168,7 +168,8 @@ mapParser.parse = function(tiles) {
     var current_shape = [];
     var shape_node_start = null;
     var last_action = null;
-    //console.log(total);
+
+    // Iterate until all nodes have been visited.
     while (discovered.length !== total) {
       if (!node) {
         console.log("Reached end.");
@@ -178,9 +179,8 @@ mapParser.parse = function(tiles) {
       // we just want to keep track of the ones we've seen.
       if (find(discovered, node, eltCompare) == -1) {
         discovered.push(node);
-        //console.log(discovered.length);
       }
-      //console.log('test');
+
       var action = actionInfo[node.r][node.c];
       var dir = action.loc;
       // And if this is the first element of the shape?
@@ -196,12 +196,12 @@ mapParser.parse = function(tiles) {
           //console.log('setting');
           first = true;
           shape_node_start = node;
+          shape_node_start_action = last_action;
         }
-        if (action.v || first) {
-          current_shape.push(node);
-        }
-        // Next node is part of shape, shape has been explored.
-        if (find(current_shape, next, eltCompare) !== -1) {
+        
+        // Current node and direction is same as at start of shape,
+        // shape has been explored.
+        if (!first && eltCompare(node, shape_node_start) && last_action == shape_node_start_action) {
           shapes.push(current_shape);
           current_shape = [];
           // Get the next undiscovered node.
@@ -211,6 +211,9 @@ mapParser.parse = function(tiles) {
           }
           shape_node_start = null;
         } else {
+          if (action.v || first) {
+            current_shape.push(node);
+          }
           node = next;
         }
       } else { // Not part of a shape.
