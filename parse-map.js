@@ -359,12 +359,12 @@ function getNavMesh(polys) {
   var partitioner = new Partition();
 
   // Remove holes from poly.
-  //var with_holes_removed = partitioner.removeHoles(polys);
   
   // Get polygons defining regions of map.
+  //best_poly.subdivide(240);
+  var with_holes_removed = partitioner.removeHoles(polys);
+  var parts = partitioner.convexPartition(with_holes_removed[0]);
   //var parts = partitioner.convexPartition(with_holes_removed);
-  best_poly.subdivide(240);
-  var parts = partitioner.convexPartition(best_poly);
   return parts;
 }
 
