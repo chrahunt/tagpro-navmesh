@@ -1,66 +1,9 @@
-// Tiles value returned from socket connection for SNES v2.
-var tiles = [
-  [1,1,1,1,1,1,7,7,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1],
-  [1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1],
-  [1,1,1,1,10,2,2,2,2,2,2,2,2,2,6.3,2,2,2,2,2,1,1,1,1],
-  [1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1],
-  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
-  [1,10,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,7,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,7,2,2,2,2,1],
-  [1,2,2,2,2,3,2,2,2,8,2,2,1,2,2,2,2,2,7,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,5,2,2,1],
-  [1,2,2,2,2,7,7,1,2,2,14,2,2,2,1,2,2,2,2,2,2,2,2,1],
-  [1,2,2,5,2,1,1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,2,7,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,7,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,8,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,7,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,7,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,1],
-  [1,1,1,1,1,1,2,2,2,2,7,9,9,9,7,2,2,2,1,1,2,2,2,1],
-  [1,1,1,1,1,1,1,2,2,2,9,9,9,9,9,2,2,2,1,1,2,2,2,1],
-  [1,1,1,1,1,1,1,2,2,2,9,9,6.2,9,9,2,2,2,1,1,2,6.3,2,1],
-  [1,1,1,1,1,1,1,2,2,2,9,9,9,9,9,2,2,2,1,1,2,2,2,1],
-  [1,1,1,1,1,1,2,2,2,2,7,9,9,9,7,2,2,2,1,1,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,7,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,7,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,8,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,7,1],
-  [1,2,2,5,2,1,1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,2,7,1],
-  [1,2,2,2,2,7,7,1,2,2,15,2,2,2,1,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,5,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
-  [1,2,2,2,2,4,2,2,2,8,2,2,1,2,2,2,2,2,7,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,7,2,2,2,2,1],
-  [1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,7,2,2,2,2,1],
-  [1,10,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,7,2,2,2,2,2,1],
-  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
-  [1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1],
-  [1,1,1,1,10,2,2,2,2,2,2,2,2,2,6.1,2,2,2,2,2,1,1,1,1],
-  [1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1],
-  [1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1],
-  [1,1,1,1,1,1,7,7,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-];
-
+// Utilities for generating usable map representations from map tiles.
 var mapParser = function() {}
 
+// Takes in a tile grid and returns an array of shapes representing the
+// grid. A shape is an array of vertices. A vertex is an objects with
+// x and y properties corresponding to the location of the vertex.
 mapParser.parse = function(tiles) {
   // Returns 1 if a cell is a bad cell, 0 otherwise.
   function isBadCell(elt) {
@@ -162,6 +105,10 @@ mapParser.parse = function(tiles) {
     }
   }
 
+  // Returns the location of obj in arr with equality determined by cmp.
+  // If no element is found then this returns -1.
+  // cmp should be a function that takes two elements and returns true
+  // if they are equal, false otherwise.
   function find(arr, obj, cmp) {
     if (typeof cmp !== 'undefined') {
       for (var i = 0; i < arr.length; i++) {
@@ -287,23 +234,28 @@ mapParser.parse = function(tiles) {
     return new_shapes;
   }
 
-  // Actually doing the conversion.
-  // Generate threshold for map.
-  var threshold_tiles = threshold(tiles, isBadCell);
+  // Bring everything together.
+  function doParse(tiles) {
+    // Actually doing the conversion.
+    // Generate threshold for map.
+    var threshold_tiles = threshold(tiles, isBadCell);
 
-  // Generate contour grid.
-  var contour_grid_2 = generateContourGrid(threshold_tiles);
+    // Generate contour grid.
+    var contour_grid_2 = generateContourGrid(threshold_tiles);
 
-  // Get tile vertex and actions for each cell in contour grid.
-  var tile_actions = threshold(contour_grid_2, getAction);
+    // Get tile vertex and actions for each cell in contour grid.
+    var tile_actions = threshold(contour_grid_2, getAction);
 
-  var generated_shapes = generateShapes(tile_actions);
-  var actual_shapes = generated_shapes.filter(function(elt) {
-    return elt.length > 0;
-  });
+    var generated_shapes = generateShapes(tile_actions);
+    var actual_shapes = generated_shapes.filter(function(elt) {
+      return elt.length > 0;
+    });
 
-  var converted_shapes = convertShapesToCoords(actual_shapes);
-  return converted_shapes;
+    var converted_shapes = convertShapesToCoords(actual_shapes);
+    return converted_shapes;
+  }
+
+  return doParse(tiles);
 }
 
 // Drawing functions.
@@ -372,46 +324,51 @@ function convertArraysToPolys(shapes) {
   return polys;
 }
 
-// Get outline of walls in map.
-var shapeArrays = mapParser.parse(tiles);
-
-var polys = convertArraysToPolys(shapeArrays);
-
-// Get main map outline by checking for the polygon with the largest
-// area.
-var best_poly = polys[0];
-var best_poly_index = 0;
-var best_poly_area = Math.abs(polys[0].getArea());
-console.log(polys[0].getArea());
-for (var i = 1; i < polys.length; i++) {
-  if (Math.abs(polys[i].getArea()) > best_poly_area) {
-    best_poly = polys[i];
-    best_poly_index = i;
-    best_poly_area = Math.abs(polys[i].getArea());
+// Try to generate navigation mesh using shapes.
+function getNavMesh(polys) {
+  // Get main map outline by checking for the polygon with the largest
+  // area.
+  var best_poly = polys[0];
+  var best_poly_index = 0;
+  var best_poly_area = Math.abs(polys[0].getArea());
+  console.log(polys[0].getArea());
+  for (var i = 1; i < polys.length; i++) {
+    if (Math.abs(polys[i].getArea()) > best_poly_area) {
+      best_poly = polys[i];
+      best_poly_index = i;
+      best_poly_area = Math.abs(polys[i].getArea());
+    }
   }
+
+  // Remove outline polygon.
+  polys.splice(best_poly_index, 1);
+
+  // Set the rest of the elements as holes.
+  polys.forEach(function(e) {
+    e.setOrientation("CW");
+    e.hole = true;
+  });
+
+  // Add outline polygon back in.
+  polys.unshift(best_poly);
+
+  var partitioner = new Partition();
+
+  // Remove holes from poly.
+  var with_holes_removed = partitioner.removeHoles(polys);
+  
+  // Get polygons defining regions of map.
+  var parts = partitioner.convexPartition(with_holes_removed);
+  return parts;
 }
 
-// Remove outline polygon.
-polys.splice(best_poly_index, 1);
-
-// Set the rest of the elements as holes.
-polys.forEach(function(e) {
-  e.setOrientation("CW");
-  e.hole = true;
-});
-
-// Add outline polygon back in.
-polys.unshift(best_poly);
-
-var partitioner = new Partition();
-
-// Remove holes from poly.
-var with_holes_removed = partitioner.removeHoles(polys);
+var tiles = tile_grids["GamePad"];
+// Get outline of walls in map.
+var shapeArrays = mapParser.parse(tiles);
 var c2d = initCanvas();
-//drawOutline(with_holes_removed, c2d);
-
-// Get polygons defining regions of map.
-var parts = partitioner.convexPartition(with_holes_removed);
-
+drawOutline(shapeArrays, c2d);
+/*
+var polys = convertArraysToPolys(shapeArrays);
 //console.log(fullparts.length + " parts generated.");
 drawOutline(parts, c2d);
+*/
