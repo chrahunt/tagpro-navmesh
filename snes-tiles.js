@@ -284,21 +284,38 @@ function convertShapesToCoords(shapes) {
   return new_shapes;
 }
 
+// Takes in an array of x, y objects
+function drawShape(shapeInfo, canvas) {
+  canvas.beginPath();
+  var start = shapeInfo.shift();
+  canvas.moveTo(start.x, start.y);
+  for (var i = 0; i < shapeInfo.length; i++) {
+    canvas.lineTo(shapeInfo[i].x, shapeInfo[i].y);
+  }
+  canvas.lineTo(start.x, start.y);
+  canvas.lineWidth = 1;
+  canvas.strokeStyle = 'black';
+  canvas.stroke();
+  canvas.closePath();
+}
+
+// Takes in a polygon
+function drawPoly(poly, canvas) {
+  canvas.beginPath();
+  var start = poly.getPoint(0);
+  canvas.moveTo(start.x, start.y);
+  for (var i = 1; i < poly.numpoints; i++) {
+    canvas.lineTo(poly.getPoint(i).x, poly.getPoint(i).y);
+  }
+  canvas.lineTo(start.x, start.y);
+  canvas.lineWidth = 1;
+  canvas.strokeStyle = 'black';
+  canvas.stroke();
+  canvas.closePath();
+}
+
 // Draw outlines on canvas.
 function drawOutline(shapes) {
-  function drawShape(shapeInfo, canvas) {
-    canvas.beginPath();
-    var start = shapeInfo.shift();
-    canvas.moveTo(start.x, start.y);
-    for (var i = 0; i < shapeInfo.length; i++) {
-      canvas.lineTo(shapeInfo[i].x, shapeInfo[i].y);
-    }
-    canvas.lineTo(start.x, start.y);
-    canvas.lineWidth = 1;
-    canvas.strokeStyle = 'black';
-    canvas.stroke();
-    canvas.closePath();
-  }
   var c = document.getElementById('c');
   c.width = tile_actions.length * 40;
   c.height = tile_actions[0].length * 40;
@@ -306,8 +323,26 @@ function drawOutline(shapes) {
   c2.fillStyle = '#d00';
 
   for (var i = 0; i < shapes.length; i++) {
-    drawShape(shapes[i], c2);
+    if (shapes[i] instanceof Poly) {
+      drawPoly(shapes[i], c2);
+    } else {
+      drawShape(shapes[i], c2);
+    }
   }
+}
+
+// Convert shapes into Polys.
+function convertShapesToPolys(shapes) {
+  var polys = shapes.map(function(shape) {
+    var poly = new Poly();
+    poly.init(shape.length);
+    for (var i = 0; i < shape.length; i++) {
+      var point = new Point(shape[i].x, shape[i].y);
+      poly.setPoint(i, point);
+    }
+    return poly;
+  });
+  return polys;
 }
 
 // Generate threshold for map.
@@ -329,5 +364,32 @@ console.log("Generated length: " + generated_shapes.length + " Actual length: " 
 console.log(actual_shapes);
 
 var converted_shapes = convertShapesToCoords(actual_shapes);
-drawOutline(converted_shapes);
+var polys = convertShapesToPolys(converted_shapes);
+// Get map outline.
+var best_poly = polys[0];
+var best_poly_index = 0;
+var best_poly_area = Math.abs(polys[0].getArea());
+console.log(polys[0].getArea());
+for (var i = 1; i < polys.length; i++) {
+  if (Math.abs(polys[i].getArea()) > best_poly_area) {
+    best_poly = polys[i];
+    best_poly_index = i;
+    best_poly_area = Math.abs(polys[i].getArea());
+  }
+}
+// Remove border poly.
+polys.splice(i, 1);
+// Set holes as such.
+polys.forEach(function(e) {
+  e.setOrientation("CW");
+  e.hole = true;
+});
+
+var partitioner = new Partition();
+// Get polygons defining regions of map.
+var parts = partitioner.convexPartition(best_poly);
+
+//var test_a = [best_poly];
+drawOutline(parts);
+//drawOutline(converted_shapes);
 
