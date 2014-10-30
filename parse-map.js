@@ -7,7 +7,7 @@ var mapParser = function() {}
 mapParser.parse = function(tiles) {
   // Returns 1 if a cell is a bad cell, 0 otherwise.
   function isBadCell(elt) {
-    var bad_cells = [1, 7, 1.1, 1.2, 1.3, 1.4];
+    var bad_cells = [0, 1, 7, 1.1, 1.2, 1.3, 1.4];
     if(bad_cells.indexOf(elt) !== -1) {
       return 1;
     } else {
@@ -183,6 +183,7 @@ mapParser.parse = function(tiles) {
       //console.log('test');
       var action = actionInfo[node.r][node.c];
       var dir = action.loc;
+      // And if this is the first element of the shape?
       if (typeof dir == 'function') {
         dir = dir(last_action);
       }
