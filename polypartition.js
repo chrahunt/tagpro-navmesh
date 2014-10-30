@@ -35,9 +35,8 @@ Point.prototype.dot = function(p) {
   return (this.x * p.x + this.y * p.y);
 }
 
-// Takes a size n.
-Poly = function(n) {
-  if (typeof n != 'undefined') this.init(n);
+//// POLY ////
+Poly = function() {
   this.hole = false;
   this.points = null;
   this.numpoints = 0;
@@ -125,6 +124,7 @@ PVertex = function() {
   this.p = null;
 };
 
+//// PARTITION ////
 Partition = function() {};
 
 Partition.prototype.isConvex = function(p1, p2, p3) {
@@ -188,7 +188,6 @@ Partition.prototype.intersects = function(p11, p12, p21, p22) {
   if (dot21 * dot22 > 0) return false;
 
   return true;
-
 }
 
 Partition.prototype.updateVertex = function(v, vertices, numvertices) {
@@ -198,13 +197,13 @@ Partition.prototype.updateVertex = function(v, vertices, numvertices) {
   v.convex = this.isConvex(v1.p, v.p, v3.p);
   var vec1 = this.normalize(v1.p.sub(v.p));
   var vec3 = this.normalize(v3.p.sub(v.p));
-  v.angle = Math.acos(vec1.dot(vec3));
+  v.angle = vec1.dot(vec3);
 
   if (v.convex) {
     v.ear = true;
     for (var i = 0; i < numvertices; i++) {
-      if (vertices[i].p.eq(v.p)) continue;
       if (vertices[i].p.eq(v1.p)) continue;
+      if (vertices[i].p.eq(v.p)) continue;
       if (vertices[i].p.eq(v3.p)) continue;
       if (this.isInside(v1.p, v.p, v3.p, vertices[i].p)) {
         v.ear = false;
@@ -309,25 +308,26 @@ Partition.prototype.convexPartition = function(poly) {
   }
 
   var triangles = this.triangulate(poly);
+  console.log(triangles.length + " triangles generated!");
 
-  for (var i = 0; i < triangles.length; i++) {
-    var poly1 = triangles[i];
-    var object_2_index = null;
+  for (var s1 = 0; s1 < triangles.length; s1++) {
+    var poly1 = triangles[s1];
+    var s2_index = null;
     for (i11 = 0; i11 < poly1.numpoints; i11++) {
       var d1 = poly1.getPoint(i11);
       i12 = poly1.getNextI(i11);
       var d2 = poly1.getPoint(i12);
 
       var isdiagonal = false;
-      for (var j = i; j < triangles.length; j++) {
-        if (i == j) continue;
-        var poly2 = triangles[j];
+      for (var s2 = s1; s2 < triangles.length; s2++) {
+        if (s1 == s2) continue;
+        var poly2 = triangles[s2];
         for (i21 = 0; i21 < poly2.numpoints; i21++) {
           if (d2.neq(poly2.getPoint(i21))) continue;
           i22 = poly2.getNextI(i21);
-          if (d1.neq(poly2.getPoint(i21))) continue;
+          if (d1.neq(poly2.getPoint(i22))) continue;
           isdiagonal = true;
-          object_2_index = j;
+          object_2_index = s2;
           break;
         }
         if (isdiagonal) break;
@@ -372,6 +372,7 @@ Partition.prototype.convexPartition = function(poly) {
   return triangles;
 }
 
+/*
 Partition.prototype.removeHoles = function(polys) {
   var hasholes = false;
   var resultpolys = new Array();
@@ -486,3 +487,4 @@ Partition.prototype.removeHoles = function(polys) {
 
   return polys;
 }
+*/
