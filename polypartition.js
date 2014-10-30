@@ -35,6 +35,11 @@ Point.prototype.dot = function(p) {
   return (this.x * p.x + this.y * p.y);
 }
 
+Point.prototype.dist = function(p) {
+  var diff = this.sub(p);
+  return Math.sqrt(diff.dot(diff))
+}
+
 //// POLY ////
 Poly = function() {
   this.hole = false;
