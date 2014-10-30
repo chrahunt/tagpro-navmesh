@@ -323,7 +323,8 @@ function drawShape(shapeInfo, canvas) {
 }
 
 // Takes in a polygon
-function drawPoly(poly, canvas) {
+function drawPoly(poly, canvas, color) {
+  if (typeof color == 'undefined') color = 'black';
   canvas.beginPath();
   var start = poly.getPoint(0);
   canvas.moveTo(start.x, start.y);
@@ -332,19 +333,22 @@ function drawPoly(poly, canvas) {
   }
   canvas.lineTo(start.x, start.y);
   canvas.lineWidth = 1;
-  canvas.strokeStyle = 'black';
+  canvas.strokeStyle = color;
   canvas.stroke();
   canvas.closePath();
 }
 
-// Draw outlines on canvas.
-function drawOutline(shapes) {
+function initCanvas() {
   var c = document.getElementById('c');
   c.width = tiles.length * 40;
   c.height = tiles[0].length * 40;
   var c2 = c.getContext('2d');
   c2.fillStyle = '#d00';
+  return c2;
+}
 
+// Draw outlines on canvas.
+function drawOutline(shapes, c2) {
   for (var i = 0; i < shapes.length; i++) {
     if (shapes[i] instanceof Poly) {
       drawPoly(shapes[i], c2);
@@ -368,11 +372,13 @@ function convertArraysToPolys(shapes) {
   return polys;
 }
 
+// Get outline of walls in map.
 var shapeArrays = mapParser.parse(tiles);
-drawOutline(shapeArrays);
 
 var polys = convertArraysToPolys(shapeArrays);
-// Get map outline.
+
+// Get main map outline by checking for the polygon with the largest
+// area.
 var best_poly = polys[0];
 var best_poly_index = 0;
 var best_poly_area = Math.abs(polys[0].getArea());
@@ -385,16 +391,32 @@ for (var i = 1; i < polys.length; i++) {
   }
 }
 
-// Remove border poly.
+// Remove outline polygon.
 polys.splice(best_poly_index, 1);
-// Set holes as such.
+
+// Set the rest of the elements as holes.
 polys.forEach(function(e) {
   e.setOrientation("CW");
   e.hole = true;
 });
 
+// Add outline polygon back in.
+polys.unshift(best_poly);
+
 var partitioner = new Partition();
+
+// Remove holes from poly.
+var with_holes_removed = partitioner.removeHoles(polys);
+var c2d = initCanvas();
+drawOutline(with_holes_removed, c2d);
+/*
 // Get polygons defining regions of map.
 var parts = partitioner.convexPartition(best_poly);
-
-drawOutline(parts);
+parts.push.apply(parts, polys);
+//console.log(fullparts.length + " parts generated.");
+var element = parts[33];
+parts.splice(33, 1);
+drawOutline(parts, c2d);
+drawPoly(element, c2d, 'red');
+//drawOutline(polys, c2d);
+*/

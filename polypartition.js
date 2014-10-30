@@ -56,7 +56,7 @@ Poly.prototype.triangle = function(p1, p2, p3) {
 
 // Takes an index and returns the point at that index, or null.
 Poly.prototype.getPoint = function(n) {
-  if (this.points && this.points.length > n)
+  if (this.points && this.numpoints > n)
     return this.points[n];
   return null;
 }
@@ -378,7 +378,7 @@ Partition.prototype.convexPartition = function(poly) {
   return triangles;
 }
 
-/*
+
 Partition.prototype.removeHoles = function(polys) {
   var hasholes = false;
   var resultpolys = new Array();
@@ -401,7 +401,7 @@ Partition.prototype.removeHoles = function(polys) {
     hasholes = false;
     for (var s = 0; s < polys.length; s++) {
       var poly1 = polys[s];
-      if (poly1.hole) continue;
+      if (!poly1.hole) continue;
 
       if (!hasholes) {
         hasholes = true;
@@ -410,10 +410,11 @@ Partition.prototype.removeHoles = function(polys) {
         var holepointindex = 0;
       }
 
+      // Get the point with greatest x value.
       for (var i = 0; i < poly1.numpoints; i++) {
         if (poly1.getPoint(i).x > holepoly.getPoint(holepointindex).x) {
-          // unnecessary?
           holepoly = poly1;
+          holepolyindex = s;
           holepointindex = i;
         }
       }
@@ -469,23 +470,23 @@ Partition.prototype.removeHoles = function(polys) {
 
     var k = 0;
     for (var i = 0; i <= polypointindex; i++) {
-      newpoly[k] = polypoly.getPoint(i);
+      newpoly.setPoint(k, polypoly.getPoint(i));
       k++;
     }
     for (var i = 0; i <= holepoly.numpoints; i++) {
-      newpoly[k] = holepoly.getPoint((i + holepointindex) % holepoly.numpoints);
+      newpoly.setPoint(k, holepoly.getPoint((i + holepointindex) % holepoly.numpoints));
       k++;
     }
-    for (var i = polypointindex; i <= polypoly.numpoints; i++) {
-      newpoly[k] = polypoly.getPoint(i);
+    for (var i = polypointindex; i < polypoly.numpoints; i++) {
+      newpoly.setPoint(k, polypoly.getPoint(i));
       k++;
     }
 
     if (holepolyindex > polypolyindex) {
       polys.splice(holepolyindex, 1);
-      polys.splice(polypoly, 1);
+      polys.splice(polypolyindex, 1);
     } else {
-      polys.splice(polypoly, 1);
+      polys.splice(polypolyindex, 1);
       polys.splice(holepolyindex, 1);
     }
     polys.push(newpoly);
@@ -493,4 +494,3 @@ Partition.prototype.removeHoles = function(polys) {
 
   return polys;
 }
-*/
