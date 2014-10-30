@@ -31,13 +31,21 @@ Point.prototype.neq = function(p) {
   return (this.x != p.x || this.y != p.y);
 }
 
+// Given another point, returns the dot product.
 Point.prototype.dot = function(p) {
   return (this.x * p.x + this.y * p.y);
 }
 
+// Given another point, returns the distance to that point.
 Point.prototype.dist = function(p) {
   var diff = this.sub(p);
   return Math.sqrt(diff.dot(diff))
+}
+
+Point.prototype.normalize = function() {
+  var n = this.dist(new Point(0, 0));
+  if (dist > 0) return this.div(n);
+  return new Point(0, 0);
 }
 
 //// POLY ////
@@ -117,6 +125,30 @@ Poly.prototype.invert = function() {
     newpoints[i] = this.points[this.numpoints - i - 1];
   }
   this.points = newpoints;
+}
+
+// Subdivides edges to keep length between consecutive vertices below
+// threshold. The division takes place at equal intervals in a given
+// edge such that the resulting line segments are below the threshold.
+Poly.prototype.subdivide = function(threshold) {
+  var newpoints = new Array();
+  var start, end, dist, npoints, dx, dy;
+  for (var i = 0; i < this.numpoints; i++) {
+    start = this.points[i];
+    end = this.points[this.getNextI(i)];
+    dist = start.dist(end);
+    newpoints.push(start);
+    if (dist > threshold) {
+      npoints = Math.ceil(dist / threshold);
+      dx = (end.x - start.x) / npoints;
+      dy = (end.y - start.y) / npoints;
+      for (var j = 1; j < npoints; j++) {
+        newpoints.push(new Point(start.x + (j * dx), start.y + (j * dy)));
+      }
+    }
+  }
+  this.points = newpoints;
+  this.numpoints = this.points.length;
 }
 
 PVertex = function() {

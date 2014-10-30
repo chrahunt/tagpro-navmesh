@@ -359,20 +359,23 @@ function getNavMesh(polys) {
   var partitioner = new Partition();
 
   // Remove holes from poly.
-  var with_holes_removed = partitioner.removeHoles(polys);
+  //var with_holes_removed = partitioner.removeHoles(polys);
   
   // Get polygons defining regions of map.
-  var parts = partitioner.convexPartition(with_holes_removed);
+  //var parts = partitioner.convexPartition(with_holes_removed);
+  best_poly.subdivide(240);
+  var parts = partitioner.convexPartition(best_poly);
   return parts;
 }
 
-var tiles = tile_grids["GamePad"];
+var tiles = tile_grids["SNESv2"];
 // Get outline of walls in map.
 var shapeArrays = mapParser.parse(tiles);
 var c2d = initCanvas();
-drawOutline(shapeArrays, c2d);
-/*
+//drawOutline(shapeArrays, c2d);
+
 var polys = convertArraysToPolys(shapeArrays);
+var parts = getNavMesh(polys);
 //console.log(fullparts.length + " parts generated.");
 drawOutline(parts, c2d);
-*/
+
