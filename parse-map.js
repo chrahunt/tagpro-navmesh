@@ -363,9 +363,64 @@ function getNavMesh(polys) {
   // Get polygons defining regions of map.
   //best_poly.subdivide(240);
   var with_holes_removed = partitioner.removeHoles(polys);
-  var parts = partitioner.convexPartition(with_holes_removed[0]);
+  with_holes_removed = with_holes_removed[0];
+  //with_holes_removed.subdivide(240);
+  var parts = partitioner.triangulate_del(with_holes_removed);
   //var parts = partitioner.convexPartition(with_holes_removed);
+  //parts = with_holes_removed;
   return parts;
+}
+
+// Takes in weak polys and outputs nibbed polys for tri2poly.js
+function separate(polys) {
+  var discovered = {};
+  var dupes = {};
+  // Offset to use in calculation.
+  var offset = 1;
+  // Find duplicates.
+  for (var s1 = 0; s1 < polys.length; s1++) {
+    var poly = polys[s1];
+    for (var i = 0; i < poly.numpoints; i++) {
+      var point = poly.points[i].toString();
+      if (!discovered.hasOwnProperty(point)) {
+        discovered[point] = true;
+      } else {
+        dupes[point] = true;
+      }
+    }
+  }
+
+  // Get duplicate points.
+  var dupe_points = [];
+  var dupe;
+  for (var s1 = 0; s1 < polys.length; s1++) {
+    var poly = polys[s1];
+    for (var i = 0; i < poly.numpoints; i++) {
+      var point = poly.points[i];
+      if (dupes.hasOwnProperty(point.toString())) {
+        dupe = [point, i, poly];
+        dupe_points.push(dupe);
+      }
+    }
+  }
+
+  // Sort elements in descending order based on their indices to
+  // prevent those indices from becoming invalid when changes are made.
+  dupe_points.sort(function(a, b) {
+    return b[1] - a[1]
+  })
+  // Edit duplicates.
+  var prev, next, point, index, p1, p2;
+  dupe_points.forEach(function(e, i, ary) {
+    point = e[0], index = e[1], poly = e[2];
+    prev = poly.points[poly.getPrevI(index)];
+    next = poly.points[poly.getNextI(index)];
+    p1 = point.add(prev.sub(point).normalize().mul(offset));
+    p2 = point.add(next.sub(point).normalize().mul(offset));
+    // Insert new points.
+    poly.points.splice(index, 1, p1, p2);
+    poly.update();
+  });
 }
 
 var tiles = tile_grids["SNESv2"];
@@ -375,7 +430,8 @@ var c2d = initCanvas();
 //drawOutline(shapeArrays, c2d);
 
 var polys = convertArraysToPolys(shapeArrays);
-var parts = getNavMesh(polys);
+separate(polys);
+//var parts = getNavMesh(polys);
 //console.log(fullparts.length + " parts generated.");
-drawOutline(parts, c2d);
+drawOutline(polys, c2d);
 
