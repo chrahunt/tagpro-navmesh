@@ -1,5 +1,4 @@
 // Adapted/copied from https://code.google.com/p/polypartition/
-// With additional help from Delaunay Triangulation Code, by Joshua Bell
 /*
  * A point represents a vertex in a 2d environment.
  */
@@ -35,6 +34,12 @@ Point.prototype.neq = function(p) {
 // Given another point, returns the dot product.
 Point.prototype.dot = function(p) {
   return (this.x * p.x + this.y * p.y);
+}
+
+// Given another point, returns the 'cross product', or at least the 2d
+// equivalent.
+Point.prototype.cross = function(p) {
+  return (this.x * p.y - this.y * p.x);
 }
 
 // Given another point, returns the distance to that point.
@@ -184,6 +189,50 @@ Poly.prototype.toPointString = function(csep, psep) {
 Poly.prototype.toString = function() {
   var center = this.centroid();
   return "" + center.x + " " + center.y;
+}
+
+// Adapted from http://stackoverflow.com/a/8721483
+Poly.prototype.containsPoint3 = function(p) {
+  var result = false;
+  for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
+    var p1 = this.points[j], p2 = this.points[i];
+    if ((p2.y > p.y) != (p1.y > p.y) &&
+        (p.x < (p1.x - p2.x) * (p.y - p2.y) / (p1.y - p2.y) + p2.x)) {
+      result = !result;
+    }
+  }
+  return result;
+}
+
+Poly.prototype.containsPoint2 = function(p) {
+  for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
+    var p1 = this.points[j], p2 = this.points[i];
+    if (PolyUtils.isConvex(p1, p, p2)) return false;
+  }
+  return true;
+}
+
+// Only works when the polygon is convex.
+// Adapted from http://stackoverflow.com/a/1119673
+Poly.prototype.containsPoint = function(p) {
+  var previous_side = "none";
+  var i, p1, p2, affine_segment, affine_point, prod, current_side;
+  for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
+    p1 = this.points[j], p2 = this.points[i];
+    affine_segment = p2.sub(p1);
+    affine_point = p.sub(p1);
+    // Get side of point relative to segment.
+    prod = affine_segment.cross(affine_point);
+    if (prod < 0) current_side = "left";
+    else if (prod > 0) current_side = "right";
+    else current_side = "none";
+
+    // Actions based on results.
+    if (current_side == "none") return false;
+    else if (previous_side == "none") previous_side = current_side;
+    else if (previous_side !== current_side) return false;
+  }
+  return true;
 }
 
 PVertex = function() {
@@ -345,4 +394,11 @@ Partition.prototype.convexPartition = function(poly, holes) {
   }
   console.log("Resulting number of polygons: " + triangles.length);
   return triangles;
+}
+
+var PolyUtils = {};
+
+PolyUtils.isConvex = function(p1, p2, p3) {
+  var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
+  return (tmp > 0);
 }

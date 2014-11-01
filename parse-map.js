@@ -293,8 +293,8 @@ function drawPoly(poly, canvas, color) {
   canvas.stroke();
   canvas.closePath();
   // draw center
-  var center = poly.centroid();
-  canvas.fillRect(center.x, center.y, 2, 2);
+  //var center = poly.centroid();
+  //canvas.fillRect(center.x, center.y, 2, 2);
 }
 
 function initCanvas() {
@@ -410,7 +410,7 @@ function separate(polys, offset) {
   }
 
   // Sort elements in descending order based on their indices to
-  // prevent those indices from becoming invalid when changes are made.
+  // prevent future indices from becoming invalid when changes are made.
   dupe_points.sort(function(a, b) {
     return b[1] - a[1]
   })
@@ -464,19 +464,35 @@ function getAdjacencyGraph(polys) {
   return neighbors;
 }
 
-var tiles = tile_grids["GamePad"];
+// Takes an event and returns the location clicked within the canvas
+// element.
+function getCanvasPointClicked(e, canvas) {
+  var rect = canvas.getBoundingClientRect();
+  return new Point(e.clientX - rect.left, e.clientY - rect.top);
+}
+
+var tiles = tile_grids["SNESv2"];
 // Get outline of walls in map.
 var shapeArrays = mapParser.parse(tiles);
 var c2d = initCanvas();
 //drawOutline(shapeArrays, c2d);
 
 var polys = convertArraysToPolys(shapeArrays);
-separate(polys);
+var navmesh = new NavMesh();
+navmesh.init(polys);
+var parts = navmesh.polys;
+//separate(polys);
 
-// Just polygons.
-var parts = getNavMesh(polys);
-// get adjacency information
-var connected = getAdjacencyGraph(parts);
-//console.log(fullparts.length + " parts generated.");
+
 drawOutline(parts, c2d);
 
+// Draw outline around clicked element, calling back to navmesh function.
+document.getElementById('c').addEventListener('click', function(evt){
+  var p = getCanvasPointClicked(evt, this);
+  var poly = navmesh.findPolyForPoint(p);
+  if (poly) {
+    c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
+    drawOutline(parts, c2d);
+    drawPoly(poly, c2d, 'red');
+  }
+}, false);
