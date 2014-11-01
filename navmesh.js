@@ -15,8 +15,88 @@ NavMesh.prototype.init = function(polys) {
   this.grid = this._generateAdjacencyGrid(this.polys);
 }
 
+// Returns a path from the source point to the target point. Path has the form
+// of points representing the center of each of the polygons required to get
+// to the target from the source.
 NavMesh.prototype.calculatePath = function(source, target) {
+  var sourcePoly, targetPoly;
+  var path = [];
+  sourcePoly = this.findPolyForPoint(source);
+  targetPoly = this.findPolyForPoint(target);
   
+  // Already in the same polygon as the target.
+  if (sourcePoly == targetPoly) {
+    path.push(source, sourcePoly.centroid(), target);
+    return path;
+  }
+
+  var polyPath = this._aStar(sourcePoly, targetPoly, this.polys);
+
+  path.push(source);
+  polyPath.forEach(function(poly) {
+    path.push(poly.centroid());
+  });
+  path.push(target);
+  return path;
+}
+
+// Returns list of polys needed to get from source to target
+NavMesh.prototype._aStar = function(source, target, polys) {
+  function nodeValue(node1, node2) {
+    return (node1.dist + heuristic(node1.loc)) - (node2.dist + heuristic(node2.loc));
+  }
+
+  // Distance between polygons.
+  function euclideanDistance(p1, p2) {
+    return p1.dist(p2);
+  }
+
+  // Distance between polygons. todo: update
+  function manhattanDistance(elt1, elt2) {
+    return (elt1.r - elt2.r) + (elt1.c - elt2.c);
+  }
+
+  // Takes Poly and returns value.
+  function heuristic(poly) {
+    return euclideanDistance(poly.centroid(), target.centroid());
+  }
+
+  var discovered = [];
+  var pq = new PriorityQueue({ comparator: nodeValue });
+  var found = null;
+  // Initialize with start location.
+  pq.queue({dist: 0, loc: source, parent: null});
+  while (pq.length > 0) {
+    var node = pq.dequeue();
+    console.log(node.loc);
+    if (node.loc == target) {
+      found = node;
+      break;
+    } else {
+      discovered.push(node.loc);
+    }
+    // Get neighbors that haven't been previously discovered.
+    var neighbors = this.grid[node.loc];
+    neighbors = neighbors.filter(function(elt) {
+      return (discovered.indexOf(elt) == -1);
+    });
+    neighbors.forEach(function(elt) {
+      pq.queue({dist: node.dist + euclideanDistance(elt.centroid(), node.loc.centroid()), loc: elt, parent: node});
+    });
+  }
+
+  if (found) {
+    var path = [];
+    var current = found;
+    while (current.parent) {
+      path.unshift(current.loc);
+      current = current.parent;
+    }
+    path.unshift(current.loc);
+    return path;
+  } else {
+    return null;
+  }
 }
 
 // private
@@ -47,6 +127,10 @@ NavMesh.prototype._generateAdjacencyGrid = function(polys) {
           var match = p1.eq(q2) && p2.eq(q1);
           if (match) {
             neighbors[poly].push(poly2);
+            if (!neighbors.hasOwnProperty(poly2)) {
+              neighbors[poly2] = new Array();
+            }
+            neighbors[poly2].push(poly);
           }
           return match;
         });
@@ -62,7 +146,6 @@ NavMesh.prototype._generateAdjacencyGrid = function(polys) {
 // representing holes in the polygon, partition the outline. Returns
 // an array of polygons representing the partitioned space
 NavMesh.prototype._generatePartition = function(outline, holes) {
-
   // Ensure proper vertex order for holes and outline.
   outline.setOrientation("CCW");
   holes.forEach(function(e) {
