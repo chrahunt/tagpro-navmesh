@@ -328,6 +328,18 @@ function convertArraysToPolys(shapes) {
   return polys;
 }
 
+function convertTrianglesToPolys(triangles) {
+  var polys = triangles.map(function(triangle) {
+    var poly = new Poly();
+    poly.init(3);
+    triangle.getPoints().forEach(function(p, i) {
+      poly.setPoint(i, new Point(p.x, p.y));
+    });
+    return poly;
+  });
+  return polys;
+}
+
 // Try to generate navigation mesh using shapes.
 function getNavMesh(polys) {
   // Get main map outline by checking for the polygon with the largest
@@ -353,30 +365,48 @@ function getNavMesh(polys) {
     e.hole = true;
   });
 
-  // Add outline polygon back in.
-  polys.unshift(best_poly);
+  // Turn holes into arrays of poly2tri Points.
+  var holes = polys.map(function(poly) {
+    return poly.points.map(function(p) {
+      return new poly2tri.Point(p.x, p.y);
+    });
+  });
 
-  var partitioner = new Partition();
+  // Do the same for the outline.
+  var contour = best_poly.points.map(function(p) {
+    return new poly2tri.Point(p.x, p.y);
+  });
+
+  var swctx = new poly2tri.SweepContext(contour);
+  swctx.addHoles(holes);
+  swctx.triangulate();
+  var triangles = swctx.getTriangles();
+
+  // Convert poly2tri triangles back into polygons and filter out the small ones.
+  polys = convertTrianglesToPolys(triangles).filter(function(poly) {
+    return poly.getArea() > 5;
+  });
+  return polys;
+  //var partitioner = new Partition();
 
   // Remove holes from poly.
   
   // Get polygons defining regions of map.
   //best_poly.subdivide(240);
-  var with_holes_removed = partitioner.removeHoles(polys);
-  with_holes_removed = with_holes_removed[0];
-  //with_holes_removed.subdivide(240);
-  var parts = partitioner.triangulate_del(with_holes_removed);
+  //var with_holes_removed = partitioner.removeHoles(polys);
+  //with_holes_removed = with_holes_removed[0];
+  //var parts = partitioner.triangulate_del(with_holes_removed);
   //var parts = partitioner.convexPartition(with_holes_removed);
   //parts = with_holes_removed;
-  return parts;
+  //return parts;
 }
 
 // Takes in weak polys and outputs nibbed polys for tri2poly.js
-function separate(polys) {
+function separate(polys, offset) {
+  offset = offset || 1;
   var discovered = {};
   var dupes = {};
   // Offset to use in calculation.
-  var offset = 1;
   // Find duplicates.
   for (var s1 = 0; s1 < polys.length; s1++) {
     var poly = polys[s1];
@@ -423,7 +453,7 @@ function separate(polys) {
   });
 }
 
-var tiles = tile_grids["SNESv2"];
+var tiles = tile_grids["GamePad"];
 // Get outline of walls in map.
 var shapeArrays = mapParser.parse(tiles);
 var c2d = initCanvas();
@@ -431,7 +461,9 @@ var c2d = initCanvas();
 
 var polys = convertArraysToPolys(shapeArrays);
 separate(polys);
-//var parts = getNavMesh(polys);
+
+
+var parts = getNavMesh(polys);
 //console.log(fullparts.length + " parts generated.");
-drawOutline(polys, c2d);
+drawOutline(parts, c2d);
 

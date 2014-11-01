@@ -1,4 +1,5 @@
 // Adapted/copied from https://code.google.com/p/polypartition/
+// With additional help from Delaunay Triangulation Code, by Joshua Bell
 /*
  * A point represents a vertex in a 2d environment.
  */
@@ -44,8 +45,26 @@ Point.prototype.dist = function(p) {
 
 Point.prototype.normalize = function() {
   var n = this.dist(new Point(0, 0));
-  if (dist > 0) return this.div(n);
+  if (n > 0) return this.div(n);
   return new Point(0, 0);
+}
+
+Point.prototype.toString = function() {
+  return 'x' + this.x + 'y' + this.y;
+}
+
+//// EDGE ////
+function Edge(v0, v1) {
+  this.v0 = v0;
+  this.v1 = v1
+}
+
+Edge.prototype.equals = function(other) {
+  return (this.v0 === other.v0 && this.v1 === other.v1);
+}
+
+Edge.prototype.inverse = function() {
+  return new Edge(this.v1, this.v0);
 }
 
 //// POLY ////
@@ -60,11 +79,16 @@ Poly.prototype.init = function(n) {
   this.numpoints = n;
 }
 
+Poly.prototype.update = function() {
+  this.numpoints = this.points.length;
+}
+
 Poly.prototype.triangle = function(p1, p2, p3) {
   this.init(3);
   this.points[0] = p1;
   this.points[1] = p2;
   this.points[2] = p3;
+  this.calcCircumcircle();
 }
 
 // Takes an index and returns the point at that index, or null.
@@ -118,7 +142,6 @@ Poly.prototype.setOrientation = function(orientation) {
   }
 }
 
-
 Poly.prototype.invert = function() {
   var newpoints = new Array(this.numpoints);
   for (var i = 0; i < this.numpoints; i++) {
@@ -151,6 +174,72 @@ Poly.prototype.subdivide = function(threshold) {
   this.numpoints = this.points.length;
 }
 
+// Only works on triangles, sets the center, radius, and radius_squared
+// of the circumcircle corresponding to a polygon.
+Poly.prototype.calcCircumcircle = function() {
+  if (this.numpoints != 3) return;
+  var v0 = this.points[0];
+  var v1 = this.points[1];
+  var v2 = this.points[2];
+  var A = v1.x - v0.x;
+  var B = v1.y - v0.y;
+  var C = v2.x - v0.x;
+  var D = v2.y - v0.y;
+
+  var E = A * (v0.x + v1.x) + B * (v0.y + v1.y);
+  var F = C * (v0.x + v2.x) + D * (v0.y + v2.y);
+
+  var G = 2.0 * (A * (v2.y - v1.y) - B * (v2.x - v1.x));
+
+  var dx, dy;
+
+  if (Math.abs(G) < EPSILON) {
+    // Collinear - find extremes and use the midpoint
+
+    var minx = Math.min(v0.x, v1.x, v2.x);
+    var miny = Math.min(v0.y, v1.y, v2.y);
+    var maxx = Math.max(v0.x, v1.x, v2.x);
+    var maxy = Math.max(v0.y, v1.y, v2.y);
+
+    this.center = new Point((minx + maxx) / 2, (miny + maxy) / 2);
+
+    dx = this.center.x - minx;
+    dy = this.center.y - miny;
+  } else {
+    var cx = (D * E - B * F) / G;
+    var cy = (A * F - C * E) / G;
+
+    this.center = new Point(cx, cy);
+
+    dx = this.center.x - v0.x;
+    dy = this.center.y - v0.y;
+  }
+
+  this.radius_squared = dx * dx + dy * dy;
+  this.radius = Math.sqrt(this.radius_squared);
+}
+
+// Returns true if a point is within this triangle's circumcircle.
+Poly.prototype.inCircumcircle = function(p) {
+  var dx = this.center.x - p.x;
+  var dy = this.center.y - p.y;
+  var dist_squared = dx * dx + dy * dy;
+
+  return (dist_squared <= this.radius_squared);
+}
+
+// Print list of points. csep is coordinate separator, psep is point
+// separator, default is space and newline, respectively.
+Poly.prototype.toString = function(csep, psep) {
+  csep = csep || ' ';
+  psep = psep || '\n';
+  var out = "";
+  this.points.forEach(function(p) {
+    out = out + p.x + csep + p.y + psep;
+  });
+  return out;
+}
+
 PVertex = function() {
   this.active = false;
   this.convex = false;
@@ -162,7 +251,10 @@ PVertex = function() {
 };
 
 //// PARTITION ////
-Partition = function() {};
+var EPSILON = 1.0e-6;
+Partition = function() {
+  this.drawCallback = null;
+};
 
 Partition.prototype.isConvex = function(p1, p2, p3) {
   var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
@@ -252,6 +344,7 @@ Partition.prototype.updateVertex = function(v, vertices, numvertices) {
   }
 }
 
+// Triangulate using ear clipping.
 Partition.prototype.triangulate = function(poly) {
   var triangles = new Array();
   var numvertices = poly.numpoints;
@@ -324,6 +417,98 @@ Partition.prototype.triangulate = function(poly) {
   return triangles;
 }
 
+Partition.prototype.createBoundingTriangle = function(poly) {
+  var minx, miny, maxx, maxy;
+  poly.points.forEach(function(vertex) {
+    if (minx === undefined || vertex.x < minx) { minx = vertex.x; }
+    if (miny === undefined || vertex.y < miny) { miny = vertex.y; }
+    if (maxx === undefined || vertex.x > maxx) { maxx = vertex.x; }
+    if (maxy === undefined || vertex.y > maxy) { maxy = vertex.y; }
+  });
+
+  var dx = (maxx - minx) * 10;
+  var dy = (maxy - miny) * 10;
+
+  var stv0 = new Point(minx - dx, miny - dy * 3);
+  var stv1 = new Point(minx - dx, maxy + dy);
+  var stv2 = new Point(maxx + dx * 3, maxy + dy);
+  var poly = new Poly();
+  poly.triangle(stv0, stv1, stv2);
+
+  return poly;
+}
+
+Partition.prototype.uniqueEdges = function(edges) {
+  var uniqueEdges = [];
+  for (var i = 0; i < edges.length; ++i) {
+    var edge1 = edges[i];
+    var unique = true;
+
+    for (var j = 0; j < edges.length; ++j) {
+      if (i === j)
+        continue;
+      var edge2 = edges[j];
+      if (edge1.equals(edge2) || edge1.inverse().equals(edge2)) {
+        unique = false;
+        break;
+      }
+    }
+
+    if (unique)
+      uniqueEdges.push(edge1);
+  }
+
+  return uniqueEdges;
+}
+
+Partition.prototype.addVertex = function(vertex, triangles) {
+  var edges = [];
+
+  // Remove triangles with circumcircles containing the vertex
+
+  triangles = triangles.filter(function(triangle) {
+    if (triangle.inCircumcircle(vertex)) {
+      edges.push(new Edge(triangle.points[0], triangle.points[1]));
+      edges.push(new Edge(triangle.points[1], triangle.points[2]));
+      edges.push(new Edge(triangle.points[2], triangle.points[0]));
+      return false;
+    }
+
+    return true;
+  });
+
+  edges = this.uniqueEdges(edges);
+
+  // Create new triangles from the unique edges and new vertex
+  edges.forEach(function(edge) {
+    var poly = new Poly();
+    poly.triangle(edge.v0, edge.v1, vertex);
+    triangles.push(poly);
+  });
+
+  return triangles;
+}
+
+// Triangulate using Delaunay triangulation.
+Partition.prototype.triangulate_del = function(poly) {
+  var triangles = new Array();
+
+  var st = this.createBoundingTriangle(poly);
+
+  triangles.push(st);
+
+  poly.points.forEach(function(vertex) {
+    triangles = this.addVertex(vertex, triangles);
+  }, this);
+  triangles = triangles.filter(function(triangle) {
+    return !(triangle.points[0].eq(st.points[0]) || triangle.points[0].eq(st.points[1]) || triangle.points[0].eq(st.points[2]) ||
+      triangle.points[1].eq(st.points[0]) || triangle.points[1].eq(st.points[1]) || triangle.points[1].eq(st.points[2]) ||
+      triangle.points[2].eq(st.points[0]) || triangle.points[2].eq(st.points[1]) || triangle.points[2].eq(st.points[2]));
+  });
+
+  return triangles;
+}
+
 // Using Hertel-Mehlhorn
 Partition.prototype.convexPartition = function(poly) {
   var i11, i12, i13, i21, i22, i23;
@@ -344,7 +529,7 @@ Partition.prototype.convexPartition = function(poly) {
     return parts;
   }
 
-  var triangles = this.triangulate(poly);
+  var triangles = this.triangulate_del(poly);
   console.log(triangles.length + " triangles generated!");
 
   for (var s1 = 0; s1 < triangles.length; s1++) {
