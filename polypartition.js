@@ -135,9 +135,43 @@ Poly.prototype.invert = function() {
   this.points = newpoints;
 }
 
+Poly.prototype.getCenter = function() {
+  var x = this.points.map(function(p) { return p.x });
+  var y = this.points.map(function(p) { return p.y });
+  var minX = Math.min.apply(null, x);
+  var maxX = Math.max.apply(null, x);
+  var minY = Math.min.apply(null, y);
+  var maxY = Math.max.apply(null, y);
+  return new Point((minX + maxX)/2, (minY + maxY)/2);
+}
+
+// Adapted from http://stackoverflow.com/a/16283349
+Poly.prototype.centroid = function() {
+  var x = 0,
+      y = 0,
+      i,
+      j,
+      f,
+      point1,
+      point2;
+
+  for (i = 0, j = this.points.length - 1; i < this.points.length; j = i, i += 1) {
+    point1 = this.points[i];
+    point2 = this.points[j];
+    f = point1.x * point2.y - point2.x * point1.y;
+    x += (point1.x + point2.x) * f;
+    y += (point1.y + point2.y) * f;
+  }
+
+  f = this.getArea() * 3;
+  x = Math.abs(x);
+  y = Math.abs(y);
+  return new Point(x / f, y / f);
+}
+
 // Print list of points. csep is coordinate separator, psep is point
 // separator, default is space and newline, respectively.
-Poly.prototype.toString = function(csep, psep) {
+Poly.prototype.toPointString = function(csep, psep) {
   csep = csep || ' ';
   psep = psep || '\n';
   var out = "";
@@ -145,6 +179,11 @@ Poly.prototype.toString = function(csep, psep) {
     out = out + p.x + csep + p.y + psep;
   });
   return out;
+}
+
+Poly.prototype.toString = function() {
+  var center = this.centroid();
+  return "" + center.x + " " + center.y;
 }
 
 PVertex = function() {

@@ -292,6 +292,9 @@ function drawPoly(poly, canvas, color) {
   canvas.strokeStyle = color;
   canvas.stroke();
   canvas.closePath();
+  // draw center
+  var center = poly.centroid();
+  canvas.fillRect(center.x, center.y, 2, 2);
 }
 
 function initCanvas() {
@@ -425,6 +428,42 @@ function separate(polys, offset) {
   });
 }
 
+// Function, takes in a list of polygons and generates an adjacency
+// matrix giving each of the neighbors for each polygon.
+function getAdjacencyGraph(polys) {
+  var neighbors = {};
+  polys.forEach(function(poly, polyI, polys) {
+    if (neighbors.hasOwnProperty(poly)) {
+      // Maximum number of neighbors already found.
+      if (neighbors[poly].length == poly.numpoints) {
+        return;
+      }
+    } else {
+      // Initialize array.
+      neighbors[poly] = new Array();
+    }
+    // Of remaining polygons, find some that are adjacent.
+    poly.points.forEach(function(p1, i, points) {
+      // Next point.
+      var p2 = points[poly.getNextI(i)];
+      for (var polyJ = polyI + 1; polyJ < polys.length; polyJ++) {
+        var poly2 = polys[polyJ];
+        // Iterate over points until match is found.
+        poly2.points.some(function(q1, j, points2) {
+          var q2 = points2[poly2.getNextI(j)];
+          var match = p1.eq(q2) && p2.eq(q1);
+          if (match) {
+            neighbors[poly].push(poly2);
+          }
+          return match;
+        });
+        if (neighbors[poly].length == poly.numpoints) break;
+      }
+    });
+  });
+  return neighbors;
+}
+
 var tiles = tile_grids["GamePad"];
 // Get outline of walls in map.
 var shapeArrays = mapParser.parse(tiles);
@@ -434,7 +473,10 @@ var c2d = initCanvas();
 var polys = convertArraysToPolys(shapeArrays);
 separate(polys);
 
+// Just polygons.
 var parts = getNavMesh(polys);
+// get adjacency information
+var connected = getAdjacencyGraph(parts);
 //console.log(fullparts.length + " parts generated.");
 drawOutline(parts, c2d);
 
