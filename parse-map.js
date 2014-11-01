@@ -356,6 +356,8 @@ function getNavMesh(polys) {
     }
   }
 
+  var outline = best_poly;
+
   // Remove outline polygon.
   polys.splice(best_poly_index, 1);
 
@@ -365,40 +367,10 @@ function getNavMesh(polys) {
     e.hole = true;
   });
 
-  // Turn holes into arrays of poly2tri Points.
-  var holes = polys.map(function(poly) {
-    return poly.points.map(function(p) {
-      return new poly2tri.Point(p.x, p.y);
-    });
-  });
+  var partitioner = new Partition();
 
-  // Do the same for the outline.
-  var contour = best_poly.points.map(function(p) {
-    return new poly2tri.Point(p.x, p.y);
-  });
-
-  var swctx = new poly2tri.SweepContext(contour);
-  swctx.addHoles(holes);
-  swctx.triangulate();
-  var triangles = swctx.getTriangles();
-
-  // Convert poly2tri triangles back into polygons and filter out the small ones.
-  polys = convertTrianglesToPolys(triangles).filter(function(poly) {
-    return poly.getArea() > 5;
-  });
-  return polys;
-  //var partitioner = new Partition();
-
-  // Remove holes from poly.
-  
-  // Get polygons defining regions of map.
-  //best_poly.subdivide(240);
-  //var with_holes_removed = partitioner.removeHoles(polys);
-  //with_holes_removed = with_holes_removed[0];
-  //var parts = partitioner.triangulate_del(with_holes_removed);
-  //var parts = partitioner.convexPartition(with_holes_removed);
-  //parts = with_holes_removed;
-  //return parts;
+  var parts = partitioner.convexPartition(outline, polys);
+  return parts;
 }
 
 // Takes in weak polys and outputs nibbed polys for tri2poly.js
@@ -461,7 +433,6 @@ var c2d = initCanvas();
 
 var polys = convertArraysToPolys(shapeArrays);
 separate(polys);
-
 
 var parts = getNavMesh(polys);
 //console.log(fullparts.length + " parts generated.");
