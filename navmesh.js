@@ -3,6 +3,14 @@ function(pp, PriorityQueue) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  // Edges are used to represent the border between two adjacent
+  // polygons.
+  Edge = function(p1, p2) {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.center = p1.add(p2.sub(p1).div(2));
+    this.points = [this.p1, this.center, this.p2];
+  }
 
   // A NavMesh represents the roll-able area of the map and gives
   // utilities for pathfinding.
@@ -43,16 +51,11 @@ function(pp, PriorityQueue) {
     
     // Already in the same polygon as the target.
     if (sourcePoly == targetPoly) {
-      path.push(source, sourcePoly.centroid(), target);
+      path.push(target);
       return path;
     }
 
-    var polyPath = this._aStar(sourcePoly, targetPoly, this.polys);
-
-    path.push(source);
-    polyPath.forEach(function(poly) {
-      path.push(poly.centroid());
-    });
+    path = this._aStar(source, target, this.polys);
     path.push(target);
     return path;
   }
@@ -61,8 +64,9 @@ function(pp, PriorityQueue) {
   // Currently uses distance from/to centroids as measure of value for
   // paths.
   NavMesh.prototype._aStar = function(source, target, polys) {
+    // Compares the value of two nodes.
     function nodeValue(node1, node2) {
-      return (node1.dist + heuristic(node1.loc)) - (node2.dist + heuristic(node2.loc));
+      return (node1.dist + heuristic(node1.point)) - (node2.dist + heuristic(node2.point));
     }
 
     // Distance between polygons.
@@ -75,31 +79,38 @@ function(pp, PriorityQueue) {
       return (elt1.r - elt2.r) + (elt1.c - elt2.c);
     }
 
-    // Takes Poly and returns value.
-    function heuristic(poly) {
-      return euclideanDistance(poly.centroid(), target.centroid());
+    // Takes Point and returns value.
+    function heuristic(p) {
+      return euclideanDistance(p, target);
     }
+    
+    var sourcePoly = this.findPolyForPoint(source);
+    var targetPoly = this.findPolyForPoint(target);
 
-    var discovered = [];
+    var discoveredPolys = [];
+    var discoveredPoints = [];
     var pq = new PriorityQueue({ comparator: nodeValue });
     var found = null;
     // Initialize with start location.
-    pq.queue({dist: 0, loc: source, parent: null});
+    pq.queue({dist: 0, poly: sourcePoly, point: source, parent: null});
     while (pq.length > 0) {
       var node = pq.dequeue();
-      if (node.loc == target) {
+      if (node.poly == targetPoly) {
         found = node;
         break;
       } else {
-        discovered.push(node.loc);
+        discoveredPolys.push(node.poly);
+        discoveredPoints.push(node.point);
       }
-      // Get neighbors that haven't been previously discovered.
-      var neighbors = this.grid[node.loc];
-      neighbors = neighbors.filter(function(elt) {
-        return (discovered.indexOf(elt) == -1);
-      });
+      var neighbors = this.grid[node.poly];
       neighbors.forEach(function(elt) {
-        pq.queue({dist: node.dist + euclideanDistance(elt.centroid(), node.loc.centroid()), loc: elt, parent: node});
+        // Get neighbor/point combos that haven't been previously discovered.
+        var neighborFound = (discoveredPolys.indexOf(elt.poly) != -1);
+
+        elt.edge.points.forEach(function(p) {
+          if (!neighborFound || (discoveredPoints.indexOf(p) == -1))
+            pq.queue({dist: node.dist + euclideanDistance(p, node.point), poly: elt.poly, point: p, parent: node});
+        });
       });
     }
 
@@ -107,10 +118,10 @@ function(pp, PriorityQueue) {
       var path = [];
       var current = found;
       while (current.parent) {
-        path.unshift(current.loc);
+        path.unshift(current.point);
         current = current.parent;
       }
-      path.unshift(current.loc);
+      path.unshift(current.point);
       return path;
     } else {
       return null;
@@ -144,11 +155,12 @@ function(pp, PriorityQueue) {
             var q2 = points2[poly2.getNextI(j)];
             var match = p1.eq(q2) && p2.eq(q1);
             if (match) {
-              neighbors[poly].push(poly2);
+              var edge = new Edge(p1, p2);
+              neighbors[poly].push({ poly: poly2, edge: edge });
               if (!neighbors.hasOwnProperty(poly2)) {
                 neighbors[poly2] = new Array();
               }
-              neighbors[poly2].push(poly);
+              neighbors[poly2].push({ poly: poly, edge: edge });
             }
             return match;
           });
