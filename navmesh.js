@@ -1,10 +1,21 @@
-define(['polypartition', 'priority-queue'],
+define(['./polypartition', './priority-queue'],
 function(pp, PriorityQueue) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
 
-  var NavMesh = function() {};
+  // A NavMesh represents the roll-able area of the map and gives
+  // utilities for pathfinding.
+  // A NavMesh may be initialized with the polygons representing the
+  // map shapes.
+  // Usage:
+  //   var polys = mapParser.parse(tiles);
+  //   var navmesh = new NavMesh(polys);
+  //   var path = navmesh.calculatePath(currentlocation, targetLocation);
+  var NavMesh = function(polys) {
+    if (typeof polys === 'undefined') { return; }
+    this.init(polys);
+  };
 
   // Takes in polygons and generates a navigation mesh.
   // Assumption made is that the outline enclosing all other polygons
@@ -46,7 +57,9 @@ function(pp, PriorityQueue) {
     return path;
   }
 
-  // Returns list of polys needed to get from source to target
+  // Returns list of polys needed to get from source to target.
+  // Currently uses distance from/to centroids as measure of value for
+  // paths.
   NavMesh.prototype._aStar = function(source, target, polys) {
     function nodeValue(node1, node2) {
       return (node1.dist + heuristic(node1.loc)) - (node2.dist + heuristic(node2.loc));

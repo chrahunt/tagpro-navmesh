@@ -1,4 +1,4 @@
-define(["poly2tri"],
+define(["./poly2tri"],
 function(poly2tri) {
   // Adapted/copied from https://code.google.com/p/polypartition/
   var exports = {};

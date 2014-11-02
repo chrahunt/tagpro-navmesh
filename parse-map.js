@@ -234,7 +234,7 @@ define(function() {
       var tile_width = 40;
 
       var new_shapes = map2d(shapes, function(loc) {
-        return {x: (loc.r + 1) * tile_width, y: (loc.c + 1) * tile_width}
+        return {x: (loc.r + 1) * tile_width - (tile_width / 2), y: (loc.c + 1) * tile_width - (tile_width / 2)}
       });
       return new_shapes;
     }
