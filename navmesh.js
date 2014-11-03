@@ -289,7 +289,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // Offset the polygons such that there is a 'offset' unit buffer between the sides
   // of the outline and around the obstacles. This buffer makes it so that the
   // mesh truly represents the movable area in the map.
-  NavMesh.prototype._offsetPolys = function(polys) {
+  NavMesh.prototype._offsetPolys = function(polys, offset) {
+    if (typeof offset == 'undefined') offset = 19;
     var outline_i = this._getLargestPoly(polys);
     var outline = polys.splice(outline_i, 1)[0];
 
@@ -318,10 +319,37 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
     co.MiterLimit = 2;
     co.arcTolerance = 0.25;
-    co.Execute(offsetted_paths, 19 * scale);
+    co.Execute(offsetted_paths, offset * scale);
     ClipperLib.JS.ScaleDownPaths(offsetted_paths, scale);
     console.log(offsetted_paths);
     var new_outline = this._convertClipperToPoly(offsetted_paths[1]);
+
+    // Handle holes.
+    co.Clear();
+
+    var hole_shapes = new Array();
+    polys.forEach(function(poly) {
+      poly.setOrientation("CCW");
+      hole_shapes.push(this._convertPolyToClipper(poly));
+    }, this);
+
+    ClipperLib.JS.ScaleUpPaths(hole_shapes, scale);
+
+    var offsetted_holes = new ClipperLib.Paths();
+    co.AddPaths(hole_shapes, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
+    co.Execute(offsetted_holes, offset * scale);
+
+    cpr.Clear();
+    cpr.AddPaths(offsetted_holes, ClipperLib.PolyType.ptSubject, true);
+
+    var unioned_holes = new ClipperLib.Paths();
+    cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_holes, subject_fillType, clip_fillType);
+    ClipperLib.JS.ScaleDownPaths(unioned_holes, scale);
+    polys = new Array();
+    unioned_holes.forEach(function(shape) {
+      polys.push(this._convertClipperToPoly(shape));
+    }, this);
+
     polys.unshift(new_outline);
     return polys;
   }

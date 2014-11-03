@@ -1,3 +1,11 @@
+requirejs.config({
+  shim: {
+    'clipper': {
+      exports: 'ClipperLib'
+    }
+  }
+});
+
 require(['navmesh', 'parse-map', 'polypartition', 'tile-grids'],
 function( NavMesh,   mapParser,   pp,              tile_grids) {
   Point = pp.Point;
