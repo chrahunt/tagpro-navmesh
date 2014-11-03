@@ -1,5 +1,13 @@
-define(['./polypartition', './priority-queue'],
-function(pp, PriorityQueue) {
+requirejs.config({
+  shim: {
+    './clipper': {
+      exports: 'ClipperLib'
+    }
+  }
+});
+
+define(['./polypartition', './priority-queue', './clipper'],
+function(  pp,                PriorityQueue,      ClipperLib) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
@@ -31,6 +39,9 @@ function(pp, PriorityQueue) {
   NavMesh.prototype.init = function(polys) {
     // Perform initial separation of any slightly overlapping polygons.
     this._separatePolys(polys);
+
+    // Offset polys so they represent walkable area.
+    polys = this._offsetPolys(polys);
 
     // Determine polygon that should be used as the outline.
     var outline_i = this._getLargestPoly(polys);
@@ -273,6 +284,99 @@ function(pp, PriorityQueue) {
       poly.update();
     });
   }
+
+  // private
+  // Offset the polygons such that there is a 'offset' unit buffer between the sides
+  // of the outline and around the obstacles. This buffer makes it so that the
+  // mesh truly represents the movable area in the map.
+  NavMesh.prototype._offsetPolys = function(polys) {
+    var outline_i = this._getLargestPoly(polys);
+    var outline = polys.splice(outline_i, 1)[0];
+
+    // Handle outline.
+    // First, create a shape with the map as the interior.
+    var scale = 100;
+    var cOutline = this._convertPolyToClipper(outline);
+    var boundingShape = this._getBoundingShape(outline);
+    var cpr = new ClipperLib.Clipper();
+    ClipperLib.JS.ScaleUpPaths([cOutline, boundingShape], scale);
+    cpr.AddPath(boundingShape, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPath(cOutline, ClipperLib.PolyType.ptClip, true);
+
+    var subject_fillType = ClipperLib.PolyFillType.pftNonZero;
+    var clip_fillType = ClipperLib.PolyFillType.pftNonZero;
+
+    var solution_paths = new ClipperLib.Paths();
+    cpr.Execute(ClipperLib.ClipType.ctDifference, solution_paths, subject_fillType, clip_fillType);
+
+    // Once we have the shape as created above, inflate it.
+    var co = new ClipperLib.ClipperOffset();
+    co.AddPaths(solution_paths, true);
+    var offsetted_paths = new ClipperLib.Paths();
+
+    co.Clear();
+    co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
+    co.MiterLimit = 2;
+    co.arcTolerance = 0.25;
+    co.Execute(offsetted_paths, 19 * scale);
+    ClipperLib.JS.ScaleDownPaths(offsetted_paths, scale);
+    console.log(offsetted_paths);
+    var new_outline = this._convertClipperToPoly(offsetted_paths[1]);
+    polys.unshift(new_outline);
+    return polys;
+  }
+
+  // private
+  // Convert polygon into array of objects with X, Y properties, as
+  // expected by Clipper.
+  NavMesh.prototype._convertPolyToClipper = function(poly) {
+    return poly.points.map(function(p) {
+      return {X:p.x, Y:p.y};
+    });
+  }
+
+  // private
+  // Convert clipper point array into Poly.
+  NavMesh.prototype._convertClipperToPoly = function(clip) {
+    var poly = new Poly();
+    poly.init(clip.length);
+    poly.points = clip.map(function(p) {
+      return new Point(p.X, p.Y);
+    });
+    return poly;
+  }
+
+  // private
+  // Get bounds of a given polygon.
+  NavMesh.prototype._getBounds = function(poly) {
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    poly.points.forEach(function(p) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+    return {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
+  }
+
+  // private
+  // Get a clipper point array bounding a given Poly by amount 'buffer'.
+  NavMesh.prototype._getBoundingShape = function(poly, buffer) {
+    if (typeof buffer == 'undefined') buffer = 5;
+    var bounds = this._getBounds(poly);
+    bounds.minX -= buffer;
+    bounds.minY -= buffer;
+    bounds.maxX += buffer;
+    bounds.maxY += buffer;
+    var shape = [];
+    shape.push({X: bounds.maxX, Y: bounds.maxY});
+    shape.push({X: bounds.minX, Y: bounds.maxY});
+    shape.push({X: bounds.minX, Y: bounds.minY});
+    shape.push({X: bounds.maxX, Y: bounds.minY});
+    return shape;
+  }
+
+
 
   return NavMesh;
 });
