@@ -20,6 +20,48 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     this.points = [this.p1, this.center, this.p2];
   }
 
+  // Adapted from https://github.com/pgkelley4/line-segments-intersect
+  Edge.prototype.intersects2 = function(edge) {
+    var q1 = edge.p1, q2 = edge.p2;
+    // exclude endpoints.
+    if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
+    var r = this.p2.sub(this.p1);
+    var s = q2.sub(q1);
+
+    var uNumerator = q1.sub(this.p1).cross(r);
+    var denominator = r.cross(s);
+
+    if (uNumerator == 0 && denominator == 0) {
+      // colinear, so do they overlap?
+      return ((q1.x - this.p1.x < 0) != (q1.x - this.p2.x < 0) != (q2.x - this.p1.x < 0) != (q2.x - this.p2.x < 0)) || 
+        ((q1.y - this.p1.y < 0) != (q1.y - this.p2.y < 0) != (q2.y - this.p1.y < 0) != (q2.y - this.p2.y < 0));
+    }
+
+    if (denominator == 0) {
+      // lines are parallel
+      return false;
+    }
+
+    var u = uNumerator / denominator;
+    var t = q1.sub(this.p1).cross(s) / denominator;
+
+    return (t >= 0) && (t <= 1) && (u >= 0) && (u <= 1);
+  }
+
+  function CCW(p1, p2, p3) {
+    a = p1.x; b = p1.y;
+    c = p2.x; d = p2.y;
+    e = p3.x; f = p3.y;
+    return (f - b) * (c - a) > (d - b) * (e - a);
+  }
+
+  // from http://stackoverflow.com/a/16725715
+  Edge.prototype.intersects = function(edge) {
+    var q1 = edge.p1, q2 = edge.p2;
+    if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
+    return !((CCW(this.p1, q1, q2) != CCW(this.p2, q1, q2)) && (CCW(this.p1, this.p2, q1) != CCW(this.p1, this.p2, q2)));
+  }
+
   // A NavMesh represents the roll-able area of the map and gives
   // utilities for pathfinding.
   // A NavMesh may be initialized with the polygons representing the
@@ -49,6 +91,16 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     this.polys = this._generatePartition(outline, polys);
     this.grid = this._generateAdjacencyGrid(this.polys);
+
+    // Keep track of original polygons, generate their edges in advance.
+    polys.unshift(outline);
+    this.original_polys = polys;
+    this.obstacle_edges = [];
+    this.original_polys.forEach(function(poly) {
+      for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
+        this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
+      }
+    }, this);
   }
 
   // Returns a path from the source point to the target point. Path has the form
@@ -69,6 +121,44 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     path = this._aStar(source, target, this.polys);
     path.push(target);
     return path;
+  }
+
+  // Given a point, return the polygon that contains it, if any.
+  // May implement a more efficient method later.
+  NavMesh.prototype.findPolyForPoint = function(p) {
+    var i, poly;
+    for (i in this.polys) {
+      poly = this.polys[i];
+      if (poly.containsPoint(p)) {
+        return poly;
+      }
+    }
+  }
+
+  // Return true if p1 is visible from p2. The offset outline and holes are
+  // used as obstacles in this case.
+  NavMesh.prototype.checkVisible = function(p1, p2) {
+    var edge = new Edge(p1, p2);
+    console.log("Checking if this edge intersects any of these.");
+    window.BotEdge = edge;
+    checkEdge = function(edges, edge_index, my_edge) {
+      var thisEdge = edges[edge_index];
+      window.BotEdge2 = thisEdge;
+      console.log("Checking if this edge and the red one intersect.");
+      if (thisEdge.intersects(my_edge)) {
+        console.log("They don't intersect!");
+      } else {
+        console.log("They intersect!");
+      }
+      if (edge_index !== edges.length - 1) {
+        setTimeout(function() {
+          checkEdge(edges, edge_index + 1, my_edge);
+        }, 1000);
+      }
+    }
+    checkEdge(this.obstacle_edges, 0, edge);
+    //var blocked = this.obstacle_edges.some(function(e) {e.intersects(edge);});
+    //return !blocked;
   }
 
   // Returns list of polys needed to get from source to target.
@@ -197,17 +287,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     var partitioner = new Partition();
 
     return partitioner.convexPartition(outline, holes);
-  }
-
-  // Given a point, return the polygon that contains it, if any.
-  NavMesh.prototype.findPolyForPoint = function(p) {
-    var i, poly;
-    for (i in this.polys) {
-      poly = this.polys[i];
-      if (poly.containsPoint(p)) {
-        return poly;
-      }
-    }
   }
 
   // private
