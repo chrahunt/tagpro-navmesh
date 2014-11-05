@@ -120,6 +120,9 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   var navmesh = new NavMesh();
   navmesh.init(polys);
   var parts = navmesh.polys;
+  polys.forEach(function(poly) {
+    parts.push(poly);
+  });
 
   // Initialize canvas.
   var canvas = initCanvasForTiles(tiles);

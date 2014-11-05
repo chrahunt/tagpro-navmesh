@@ -11,6 +11,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  
   // Edges are used to represent the border between two adjacent
   // polygons.
   Edge = function(p1, p2) {
@@ -18,34 +19,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     this.p2 = p2;
     this.center = p1.add(p2.sub(p1).div(2));
     this.points = [this.p1, this.center, this.p2];
-  }
-
-  // Adapted from https://github.com/pgkelley4/line-segments-intersect
-  Edge.prototype.intersects2 = function(edge) {
-    var q1 = edge.p1, q2 = edge.p2;
-    // exclude endpoints.
-    if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
-    var r = this.p2.sub(this.p1);
-    var s = q2.sub(q1);
-
-    var uNumerator = q1.sub(this.p1).cross(r);
-    var denominator = r.cross(s);
-
-    if (uNumerator == 0 && denominator == 0) {
-      // colinear, so do they overlap?
-      return ((q1.x - this.p1.x < 0) != (q1.x - this.p2.x < 0) != (q2.x - this.p1.x < 0) != (q2.x - this.p2.x < 0)) || 
-        ((q1.y - this.p1.y < 0) != (q1.y - this.p2.y < 0) != (q2.y - this.p1.y < 0) != (q2.y - this.p2.y < 0));
-    }
-
-    if (denominator == 0) {
-      // lines are parallel
-      return false;
-    }
-
-    var u = uNumerator / denominator;
-    var t = q1.sub(this.p1).cross(s) / denominator;
-
-    return (t >= 0) && (t <= 1) && (u >= 0) && (u <= 1);
   }
 
   function CCW(p1, p2, p3) {
@@ -59,7 +32,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   Edge.prototype.intersects = function(edge) {
     var q1 = edge.p1, q2 = edge.p2;
     if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
-    return !((CCW(this.p1, q1, q2) != CCW(this.p2, q1, q2)) && (CCW(this.p1, this.p2, q1) != CCW(this.p1, this.p2, q2)));
+    return (CCW(this.p1, q1, q2) != CCW(this.p2, q1, q2)) && (CCW(this.p1, this.p2, q1) != CCW(this.p1, this.p2, q2));
   }
 
   // A NavMesh represents the roll-able area of the map and gives
@@ -71,7 +44,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   //   var navmesh = new NavMesh(polys);
   //   var path = navmesh.calculatePath(currentlocation, targetLocation);
   var NavMesh = function(polys) {
-    if (typeof polys === 'undefined') { return; }
+    if (typeof polys == 'undefined') { return; }
     this.init(polys);
   };
 
@@ -139,16 +112,16 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // used as obstacles in this case.
   NavMesh.prototype.checkVisible = function(p1, p2) {
     var edge = new Edge(p1, p2);
-    console.log("Checking if this edge intersects any of these.");
+    //console.log("Checking if this edge intersects any of these.");
     window.BotEdge = edge;
     checkEdge = function(edges, edge_index, my_edge) {
       var thisEdge = edges[edge_index];
       window.BotEdge2 = thisEdge;
       console.log("Checking if this edge and the red one intersect.");
       if (thisEdge.intersects(my_edge)) {
-        console.log("They don't intersect!");
-      } else {
         console.log("They intersect!");
+      } else {
+        console.log("They don't intersect!");
       }
       if (edge_index !== edges.length - 1) {
         setTimeout(function() {
@@ -156,14 +129,16 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         }, 1000);
       }
     }
-    checkEdge(this.obstacle_edges, 0, edge);
-    //var blocked = this.obstacle_edges.some(function(e) {e.intersects(edge);});
-    //return !blocked;
+    //checkEdge(this.obstacle_edges, 0, edge);
+    var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
+    //console.log("Visible: " + !blocked);
+    return !blocked;
   }
 
-  // Returns list of polys needed to get from source to target.
-  // Currently uses distance from/to centroids as measure of value for
-  // paths.
+  // Computes path from source to target, using sides and centers of the edges
+  // between adjacent polygons. source and target are Points and polys should
+  // be the final partitioned map.
+  // @throws  
   NavMesh.prototype._aStar = function(source, target, polys) {
     // Compares the value of two nodes.
     function nodeValue(node1, node2) {
@@ -184,8 +159,31 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     function heuristic(p) {
       return euclideanDistance(p, target);
     }
+
+    function PathfindingException(m) {
+      this.message = m;
+      this.toString = function() {
+        return "PathfindingException: " + this.message;
+      }
+    }
     
     var sourcePoly = this.findPolyForPoint(source);
+    // We're outside of the mesh somehow. Try a few nearby points.
+    if (typeof sourcePoly == 'undefined') {
+      var offsetSource = [new Point(5, 0), new Point(-5, 0), new Point(0, -5), new Point(0, 5)];
+      for (var i = 0; i < offsetSource.length; i++) {
+        // Make new point.
+        var point = source.add(offsetSource[i]);
+        sourcePoly = this.findPolyForPoint(point);
+        if (!(typeof sourcePoly == 'undefined')) {
+          source = point;
+          break;
+        }
+      }
+      if (typeof sourcePoly == 'undefined') {
+        throw new PathfindingException("Polygon not found for source point.");
+      }
+    }
     var targetPoly = this.findPolyForPoint(target);
 
     var discoveredPolys = [];
@@ -203,6 +201,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         discoveredPolys.push(node.poly);
         discoveredPoints.push(node.point);
       }
+      // This may be undefined if there was no polygon found.
       var neighbors = this.grid[node.poly];
       neighbors.forEach(function(elt) {
         // Get neighbor/point combos that haven't been previously discovered.
@@ -225,7 +224,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
       path.unshift(current.point);
       return path;
     } else {
-      return null;
+      throw new PathfindingException("Goal not found.");
     }
   }
 
@@ -369,7 +368,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // of the outline and around the obstacles. This buffer makes it so that the
   // mesh truly represents the movable area in the map.
   NavMesh.prototype._offsetPolys = function(polys, offset) {
-    if (typeof offset == 'undefined') offset = 19;
+    if (typeof offset == 'undefined') offset = 18;
     var outline_i = this._getLargestPoly(polys);
     var outline = polys.splice(outline_i, 1)[0];
 
