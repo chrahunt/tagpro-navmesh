@@ -1,54 +1,25 @@
 // Code for generating the cell value<->action pairs.
 
-// Testing.
-function test(val, expected) {
-  var fn;
-  if (val instanceof Array) {
-    fn = arrayCompare;
+// A cell represents a contour cell with a value equal to the surrounding cells.
+Cell = function(val) {
+  if (typeof val == "number") {
+    this.value = val;
+    this.array = this._getCellArray(this.value);
   } else {
-    fn = function(a, b) {return a == b;}
+    this.array = val;
+    this.value = this._getValue(this.array);
   }
-
-  if (fn(val, expected)) {
-    console.log("Test passed!");
-  } else {
-    console.error("Test failed!");
-    console.log("Expected: " + expected);
-    console.log("Actual: " + val);
-  }
-}
-
-// Compare two arrays value-by-value.
-function arrayCompare(arr1, arr2) {
-  if (arr1.length !== arr2.length) return false;
-  for (var i = 0; i < arr1.length; i++) {
-    if (arr1[i] !== arr2[i]) return false;
-  }
-  return true;
 }
 
 // Given a length-4 array specifying the values for the nw, ne, se, sw quadrants
 // of a contour cell, return it's integer value. Each quadrant should have value
 // 0-3.
-function getCellValue(cell) {
-  return cell[0] * 64 + cell[1] * 32 + cell[2] * 8 + cell[3] * 1;
-}
-
-// Given a length-4 array specifying the arrangement of an entrance or exit, return
-// its value without including the special characters.
-function getEValue(cell) {
-  var val = new Array(4);
-  for (var i = 0; i < 4; i++) {
-    if (cell[i] != 4)
-      val[i] = cell[i];
-    else
-      val[i] = 0;
-  }
-  return getCellValue(val);
+Cell.prototype._getValue = function(array) {
+  return array[0] * 64 + array[1] * 32 + array[2] * 8 + array[3] * 1;
 }
 
 // Given a number from 0-255, return the cell that would have generated it.
-function getCell(n) {
+Cell.prototype._getCellArray = function(n) {
   var cell = new Array(4);
 
   cell[3] = n % 4;
@@ -63,17 +34,116 @@ function getCell(n) {
   return cell;
 }
 
-// Rotate array values clockwise the number of times indicated.
-function rotate(ary, n) {
-  if (typeof n == 'undefined') n = 1;
-  return ary.slice(-n).concat(ary.slice(0, -n));
+// Return a new cell rotated the number of times given.
+Cell.prototype.rotate = function(n) {
+  return new Cell(this._rotateArray(this.array, n));
 }
 
-test(rotate([1, 0, 0, 0]), [0, 1, 0, 0]);
-test(rotate([1, 0, 0, 1]), [1, 1, 0, 0]);
+// Rotate array values clockwise the number of times indicated.
+Cell.prototype._rotateArray = function(array, n) {
+  if (typeof n == 'undefined') n = 1;
+  return array.slice(-n).concat(array.slice(0, -n));
+}
+
+// Returns true if a cell matches a given template.
+Cell.prototype.matches = function(template) {
+  var template_array = template.raw_array;
+  for (var i = 0; i < template_array.length; i++) {
+    if (template_array[i] == _) continue; // Disregarded quadrant.
+    if (template_array[i] !== this.array[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// A Template is either an entrance or an exit and has functionality similar to a Cell,
+// but accounts for the symbols used when defining templates. Always initialized with an
+// array template.
+Template = function(array, dir, exit_location) {
+  if (typeof exit_location == 'undefined') {
+    this.type = "exit";
+  } else {
+    this.type = "entrance";
+    this.exit_location = exit_location;
+  }
+  this.raw_array = array;
+  this.array = this._filterArray(this.raw_array);
+  this.dir = dir;
+  this.cell = new Cell(this.array);
+  this.value = this.cell.value;
+  this.mask = this._getMask(this.array);
+}
+
+// Return a template rotated n times.
+Template.prototype.rotate = function(n) {
+  var new_array = this._rotateArray(this.raw_array, n);
+  // Switch upper/lower for rotation.
+  for (var i = 0; i < new_array.length; i++) {
+
+  }
+  var new_dir = this._rotateDir(this.dir, n);
+  var new_exit_location;
+  if (this.type == "entrance") {
+    new_exit_location = this._rotateArray(this.exit_location, n);
+  }
+  return new Template(new_array, new_dir, new_exit_location);
+}
+
+// Takes an array and filters out the values that do not correspond to actual tile values.
+Template.prototype._filterArray = function(array) {
+  var val = new Array(4);
+  for (var i = 0; i < 4; i++) {
+    if (array[i] != 4)
+      val[i] = array[i];
+    else
+      val[i] = 0;
+  }
+  return val;
+}
+
+// Return the mask for an entrance/exit node such that, when & with 
+// a contour cell, it will produce the same number as the value of the node if the
+// contour cell contains that arrangement.
+Template.prototype._getMask = function(array) {
+  var mask = new Array(4);
+  for (var i = 0; i < 4; i++) {
+    if (array[i])
+      mask[i] = 3;
+    else
+      mask[i] = 0;
+  }
+  return this._getValue(mask);
+}
+
+Template.prototype._getValue = function(array) {
+  return this.cell._getValue(array);
+}
+
+Template.prototype._rotateArray = function(array, n) {
+  function rotate(array) {
+    var new_array = [0, 0, 0, 0];
+    for (var i = 0; i < array.length; i++) {
+      // Move as-is.
+      if (array[i] == 0 || array[i] == 1 || array[i] == _ || array[i] == $ || i == 1 || i == 3) {
+        new_array[(i + 1) % 4] = array[i];
+      } else {
+        // Change out twos for threes and vice-versa.
+        new_array[(i + 1) % 4] = (array[i] == 3) ? 2 : 3;
+      }
+    }
+    return new_array;
+  }
+  var new_array = array;
+  for (var i = 0; i < n; i++) {
+    new_array = rotate(new_array);
+  }
+  return new_array;
+  //return this.cell._rotateArray(array, n);
+}
 
 // Rotate direction clockwise by 90 degrees the number of times indicated.
-function rotateDir(dir, n) {
+Template.prototype._rotateDir = function(dir, n) {
   if (typeof n == 'undefined') n = 1;
   // What happens to directions when rotated 90 degrees CW.
   var rotated_directions = {
@@ -93,25 +163,35 @@ function rotateDir(dir, n) {
   return result;
 }
 
-test(rotateDir("n", 1), "e");
-test(rotateDir("n", 2), "s");
-test(rotateDir("ne", 1), "se");
-
-
-// Return the mask for an entrance/exit node such that, when & with 
-// a contour cell, it will produce the same number as the value of the node if the
-// contour cell contains that arrangement.
-function getMask(cell) {
-  var mask = new Array(4);
+// In cases where multiple entrance/exits were found, match this entrance with the proper
+// exit based on the exit_location array.
+Template.prototype.getExit = function(matched_exits) {
+  var specific_exits = [];
+  // Get start location.
+  var start = this.exit_location.indexOf($);
+  // Loop CCW starting from exit_location start searching for exits.
+  var found = false;
   for (var i = 0; i < 4; i++) {
-    if (cell[i] != 4)
-      mask[i] = 3;
-    else
-      mask[i] = 0;
-  }
-  return getCellValue(mask);
-}
+    var index = (start - i + 4) % 4;
 
+    for (var j = 0; j < matched_exits.length; j++) {
+      var exit = matched_exits[j];
+      if (exit.raw_array[index] !== _) {
+        specific_exits.push(exit);
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      break;
+    }
+  }
+
+  if (specific_exits.length !== 1) {
+    throw "More than one exit found!";
+  }
+  return specific_exits[0];
+}
 
 // Create the object that holds countour cell->(action, vertex) information.
 function makeActionIndex() {
@@ -128,13 +208,23 @@ function makeActionIndex() {
   };
 }
 
+Point = function(x, y) {
+  this.x = x;
+  this.y = y;
+}
+
+Point.prototype.add = function(p) {
+  return new Point(this.x + p.x, this.y + p.y);
+}
+
 // Drawing functions.
 // Takes in a cell and draws it.
 function drawCell(cell, canvas, loc, fill) {
   // Also takes in a number and outputs a cell.
-  if (typeof cell == 'number') cell = getCell(cell);
-  if (typeof loc2 == 'undefined') loc2 = {x: 0, y: 0};
+  if (typeof loc == 'undefined') loc = {x: 0, y: 0};
   if (typeof fill == 'undefined') fill = '#8ED6FF';
+
+  var quadrant_width = 50;
   // Given a number in a quadrant and a location specifying the top left corner of
   // the quadrant, draw the relevant shape.
   function drawQuadrant(n, q, loc) {
@@ -233,7 +323,7 @@ function drawCell(cell, canvas, loc, fill) {
   ];
 
   // number at element, quadrant
-  cell.forEach(function(n, q) {
+  cell.array.forEach(function(n, q) {
     var offset = offsets[q];
     var new_loc = {x: loc.x + offset.x, y: loc.y + offset.y};
     drawQuadrant(n, q, new_loc);
@@ -253,82 +343,38 @@ var $ = 5;
 // _ - not relevant to matching
 // $ - cells to look at for exit information if there is more than one entrance/exit.
 var entrances = [
-  [0, _, _, 1],
-  [2, _, _, _],
-  [3, _, _, 1],
-  [0, _, _, 3]
-];
-
-// Direction one would have entered from if tracing around polygon containing one of the entrance
-// combinations.
-var entrance_dirs = [
-  "e",
-  "se",
-  "e",
-  "e"
-];
-
-// Locations to look for exits if there are more than 1 entrance/exit combo.
-var multi_entrance_exits = [
-  [_, _, $, $],
-  [$, _, _, $],
-  [_, _, $, $],
-  [_, _, _, $]
+  new Template([0, _, _, 1], "e", [_, _, _, $]),
+  new Template([2, _, _, _], "se", [$, _, _, _]),
+  new Template([3, _, _, 1], "e", [_, _, _, $]),
+  new Template([0, _, _, 3], "e", [_, _, _, $]),
+  new Template([3, _, _, 3], "e", [_, _, _, $])
 ];
 
 // Adjacent tile arrangements defining exits.
 var exits = [
-  [1, _, _, 0],
-  [3, _, _, _],
-  [1, _, _, 2],
-  [2, _, _, 0]
+  new Template([1, _, _, 0], "w"),
+  new Template([3, _, _, _], "nw"),
+  new Template([1, _, _, 2], "w"),
+  new Template([2, _, _, 0], "w"),
+  new Template([2, _, _, 2], "w")
 ];
 
-// Direction of exits given above.
-var exit_dirs = [
-  "w",
-  "nw",
-  "w",
-  "w"
-];
-
+// Number of initial definitions made above for entrances and exits.
 var definitions = entrances.length;
-// Arrays to be appended to.
-var orientation_arrays = [entrances, multi_entrance_exits, exits];
-var dir_arrays = [entrance_dirs, exit_dirs];
-
-// Add rotations of each element in the above arrays back into the arrays.
+// Add all rotations of each template element in the above arrays back into the arrays.
 for (var i = 0; i < definitions; i++) {
-  var orientation_elts = orientation_arrays.map(function(ary) {
-    return ary[i];
-  });
-  var dir_elts = dir_arrays.map(function(ary) {
-    return ary[i];
-  });
+  var entrance = entrances[i];
+  var exit = exits[i];
   for (var j = 1; j < 4; j++) {
-    orientation_elts.forEach(function(elt, index) {
-      orientation_arrays[index].push(rotate(elt, j));
-    });
-    dir_elts.forEach(function(elt, index) {
-      dir_arrays[index].push(rotateDir(elt, j));
-    });
+    entrances.push(entrance.rotate(j));
+    exits.push(exit.rotate(j));
   }
 }
-
-// List of masks, when you & the mask with the value of the cell
-// if it equals the mask value then it matches.
-var entranceMasks = entrances.map(function(e) {
-  return [getMask(e), getEValue(e)];
-});
-
-var exitMasks = exits.map(function(e) {
-  return [getMask(e), getEValue(e)];
-});
 
 // Array with every possible cell permutation.
 var cells = [];
 for (var i = 0; i < 256; i++) {
-  cells.push(i);
+  cells.push(new Cell(i));
 }
 
 var action_values = new Array(256);
@@ -336,47 +382,59 @@ var action_values = new Array(256);
 // and exits.
 var broken_cells = [];
 
+// Update number of definitions.
+definitions = entrances.length;
+
 // Loop through cells, get entrances and exits, and assign them to
 // action values.
-cells.forEach(function(cell) {
-  var val = cell;
-  var matched_ents = [];
+cells.forEach(function(cell, index) {
+  //if (index !== 10) return;
+  var matched_entrances = [];
   var matched_exits = [];
   // Get relevant entrances.
-  for (var i = 0; i < entranceMasks.length; i++) {
-    var mask = entranceMasks[i][0];
-    var e_val = entranceMasks[i][1];
-    if ((val & mask) == e_val) {
-      matched_ents.push(i);
+  for (var i = 0; i < definitions; i++) {
+    var entrance_template = entrances[i];
+    var exit_template = exits[i];
+    if (cell.matches(entrance_template)) {
+      matched_entrances.push(entrance_template);
+    }
+    if (cell.matches(exit_template)) {
+      matched_exits.push(exit_template);
     }
   }
-  for (var i = 0; i < entranceMasks.length; i++) {
-    var mask = exitMasks[i][0];
-    var e_val = exitMasks[i][1];
-    if ((val & mask) == e_val) {
-      matched_exits.push(i);
-    }
-  }
+
   // Only one exit and one entrance found.
-  if (matched_exits.length == 1 && matched_ents.length == 1) {
-    var m_exit = matched_exits[0];
-    var m_ent = matched_ents[0];
-    action_values[val] = {
-      v: exit_dirs[m_exit] !== entrance_dirs[m_ent],
-      loc: exit_dirs[m_exit]
+  if (matched_exits.length == 1 && matched_entrances.length == 1) {
+    var matched_exit = matched_exits[0];
+    var matched_entrance = matched_entrances[0];
+    action_values[cell.value] = {
+      v: matched_exit.dir !== matched_entrance.dir,
+      loc: matched_exit.dir
     };
-  } else if (matched_ents.length == 0 && matched_exits.length == 0) {
+  } else if (matched_entrances.length == 0 && matched_exits.length == 0) {
     // No entrances or exits found.
-    action_values[val] = {
+    action_values[cell.value] = {
       v: false,
       loc: "none"
     };
-  } else if (matched_exits.length == matched_ents.length) {
-    // Equal lengths and greater than 1.
-    // Todo: handle this!
-  } else {
-    broken_cells.push([cell, matched_ents, matched_exits]);
-  }
+  } else if (matched_exits.length == matched_entrances.length) {
+    // Equal lengths but more than 1 matched set.
+    // Associate proper entrance values with proper exit values.
+    action_values[cell.value] = [];
+    var locs = [];
+    matched_entrances.forEach(function(entrance) {
+      var exit = entrance.getExit(matched_exits);
+      locs.push({in_dir: entrance.dir, out_dir: exit.dir});
+    });
+    locs.forEach(function(loc) {
+      action_values[cell.value].push({
+        v: loc.in_dir !== loc.out_dir,
+        loc: loc
+      });
+    });
+  } //else {
+    broken_cells.push([cell, matched_entrances, matched_exits]);
+  //}
 });
 
 console.error("Number of unequal entrance/exit combinations: " + broken_cells.length);
@@ -389,19 +447,28 @@ var total_width = text_width + tile_width;
 var total_height = 125;
 // Initialize canvas size.
 c.width = broken_cells.length >= 5 ? total_width * 5 : broken_cells.length * total_width;
-c.height = broken_cells.length >= 5 ? Math.ceil(broken_cells.length / 5) * total_height : total_height;
+c.height = broken_cells.length >= 5 ? Math.ceil(broken_cells.length / 5) * total_width : total_width;
 
-function drawBadCells(broken_cells) {
-  // Drawing bad cells:
+// Function for drawing the cells that were unmatched.
+function drawBadCells(cells) {
+  var context = c.getContext('2d');
+  var canvas = c; // from global.
+  // Drawing bad cells
   var draw_loc = {x: 0, y: 0};
-  for (var i = 0; i < broken_cells.length; i++) {
-    var cell = broken_cells[i];
-    c.getContext('2d').fillStyle = 'black';
-    c.getContext('2d').fillText(cell[0], draw_loc.x + 5, draw_loc.y + 10)
-    c.getContext('2d').fillText("ents:" + cell[1].length, draw_loc.x + 5, draw_loc.y + 20)
-    c.getContext('2d').fillText("exts:" + cell[2].length, draw_loc.x + 5, draw_loc.y + 35)
+  for (var i = 0; i < cells.length; i++) {
+    var cell_info = cells[i];
+    var cell = cell_info[0];
+    var matched_entrances = cell_info[1];
+    var matched_exits = cell_info[2]
 
-    drawCell(cell[0], c, {x: draw_loc.x + text_width, y: draw_loc.y});
+    // Write information.
+    context.fillStyle = 'black';
+    context.fillText(cell.value, draw_loc.x + 5, draw_loc.y + 10)
+    context.fillText("ents:" + matched_entrances.length, draw_loc.x + 5, draw_loc.y + 20)
+    context.fillText("exts:" + matched_exits.length, draw_loc.x + 5, draw_loc.y + 35)
+
+    drawCell(cell, canvas, {x: draw_loc.x + text_width, y: draw_loc.y});
+    // Increment drawing location.
     if ((i % 5) == 4) {
       draw_loc = {x: 0, y: draw_loc.y + total_width};
     } else {
@@ -433,7 +500,7 @@ function getCanvasPointClicked(e, canvas) {
 // it is -1.
 function getIndexForLoc(loc) {
   var col = Math.floor(loc.x / total_width);
-  var row = Math.floor(loc.y / total_height);
+  var row = Math.floor(loc.y / total_width);
   var index = col + (row * 5);
   return index;
 }
@@ -446,28 +513,31 @@ document.getElementById('c').addEventListener('click', function(evt) {
   var shift = evt.shiftKey;
   // Get index of point clicked.
   var index = getIndexForLoc(p);
+  console.log("Index clicked: " + index);
   // Get cell.
-  var cell = broken_cells[index];
+  var cell_info = broken_cells[index];
+  var cell = cell_info[0];
+  var matched_entrances = cell_info[1];
+  var matched_exits = cell_info[2];
+
   // Increment times clicked.
   clicks[index]++;
-  var this_elt = clicks[index] % (cell[1].length + cell[2].length);
+  var this_elt = clicks[index] % (matched_entrances.length + matched_exits.length);
+
   var shape, fill;
   // Get which shape should be displayed.
   // matched ents
-  if (this_elt < cell[1].length) {
-    shape = cell[1][this_elt];
-    shape = entranceMasks[shape][1];
+  if (this_elt < matched_entrances.length) {
+    shape = matched_entrances[this_elt];
     fill = 'green';
-  } else if (this_elt < cell[0].length) {
-    shape = cell[2][this_elt - cell[1].length];
-    shape = exitMasks[shape][1];
+  } else {
+    shape = matched_exits[this_elt - matched_entrances.length];
     fill = 'red';
   }
-  // Get original location
-  var loc = {x: ((index % 5) * total_width + 40), y: Math.floor((index - 1) / 5) * total_width};
-  // redraw shape
-  drawCell(cell[0], this, loc, 'red');
-  drawCell(shape, this, loc, fill);
 
+  // Get original location.
+  var loc = {x: ((index % 5) * total_width + 40), y: Math.floor(index / 5) * total_width};
   
+  // Draw template.
+  drawCell(shape, this, loc, fill);
 }, false);
