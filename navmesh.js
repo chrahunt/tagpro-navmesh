@@ -61,7 +61,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     // Determine polygon that should be used as the outline.
     var outline_i = this._getLargestPoly(polys);
     var outline = polys.splice(outline_i, 1)[0];
-
+    return outline;
     this.polys = this._generatePartition(outline, polys);
     this.grid = this._generateAdjacencyGrid(this.polys);
 
@@ -368,12 +368,44 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // of the outline and around the obstacles. This buffer makes it so that the
   // mesh truly represents the movable area in the map.
   NavMesh.prototype._offsetPolys = function(polys, offset) {
-    if (typeof offset == 'undefined') offset = 18;
-    var outline_i = this._getLargestPoly(polys);
-    var outline = polys.splice(outline_i, 1)[0];
+    function find(arr, obj, cmp) {
+      if (typeof cmp !== 'undefined') {
+        for (var i = 0; i < arr.length; i++) {
+          if (cmp(arr[i], obj)) {
+            return i;
+          }
+        }
+        return -1;
+      }
+    }
+
+    // Compare two array locations.
+    function shpCompare(elt1, elt2) {
+      if (elt1.length !== elt2.length) return false;
+      for (var i = 0; i < elt1.length; i++) {
+        if (elt1[i].X != elt2[i].X || elt1[i].Y != elt2[i].Y) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (typeof offset == 'undefined') offset = 18; // ball radius / 2
+    var indices = [];
+    var outline = polys.filter(function(poly, index) {
+      if (poly.getOrientation() == "CCW") {
+        indices.push(index);
+        return true;
+      }
+      return false;
+    });
+    var outline_i = indices[0];
+    outline = outline[0];
+    polys.splice(outline_i, 1);
+
 
     // Handle outline.
-    // First, create a shape with the map as the interior.
+    // First, create a shape with the outline as the interior.
     var scale = 100;
     var cOutline = this._convertPolyToClipper(outline);
     var boundingShape = this._getBoundingShape(outline);
@@ -398,9 +430,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     co.MiterLimit = 2;
     co.arcTolerance = 0.25;
     co.Execute(offsetted_paths, offset * scale);
-    ClipperLib.JS.ScaleDownPaths(offsetted_paths, scale);
-    console.log(offsetted_paths);
-    var new_outline = this._convertClipperToPoly(offsetted_paths[1]);
+    //console.log(offsetted_paths);
+    var offsetted_outline = offsetted_paths[1];
 
     // Handle holes.
     co.Clear();
@@ -413,22 +444,33 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     ClipperLib.JS.ScaleUpPaths(hole_shapes, scale);
 
+    // Inflate holes.
     var offsetted_holes = new ClipperLib.Paths();
     co.AddPaths(hole_shapes, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
     co.Execute(offsetted_holes, offset * scale);
 
+    var offsetted_shapes = offsetted_holes.slice();
+    offsetted_shapes.push(offsetted_paths[1]);
+
     cpr.Clear();
-    cpr.AddPaths(offsetted_holes, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(offsetted_shapes, ClipperLib.PolyType.ptSubject, true);
 
     var unioned_holes = new ClipperLib.Paths();
     cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_holes, subject_fillType, clip_fillType);
+    unioned_holes.forEach(function(u) {
+      if (find(offsetted_holes, u, shpCompare) !== -1) {
+        console.log("Found.");
+      } else {
+        console.log(u);
+      }
+    });
     ClipperLib.JS.ScaleDownPaths(unioned_holes, scale);
     polys = new Array();
     unioned_holes.forEach(function(shape) {
       polys.push(this._convertClipperToPoly(shape));
     }, this);
 
-    polys.unshift(new_outline);
+    //polys.unshift(new_outline);
     return polys;
   }
 

@@ -1,13 +1,5 @@
-requirejs.config({
-  shim: {
-    'clipper': {
-      exports: 'ClipperLib'
-    }
-  }
-});
-
-require(['navmesh', 'parse-map', 'polypartition', 'tile-grids'],
-function( NavMesh,   mapParser,   pp,              tile_grids) {
+require(['parse-map', 'polypartition', 'tile-grids'],
+function( mapParser,   pp,              tile_grids) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
@@ -39,6 +31,7 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     context.strokeStyle = '#003300';
     context.stroke();
   }
+
   function drawPath(pathInfo, canvas) {
     var context = canvas.getContext('2d');
     context.beginPath();
@@ -87,7 +80,11 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   function drawOutline(shapes, canvas) {
     for (var i = 0; i < shapes.length; i++) {
       if (shapes[i] instanceof Poly) {
-        drawPoly(shapes[i], canvas);
+        if (shapes[i].getOrientation() == "CCW") {
+          drawPoly(shapes[i], canvas, 'green');
+        } else {
+          drawPoly(shapes[i], canvas, 'red');
+        }
       } else {
         drawShape(shapes[i], canvas);
       }
@@ -101,53 +98,15 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     return new Point(e.clientX - rect.left, e.clientY - rect.top);
   }
 
-  function getPathAndDrawUpdate(start, end) {
-    var c2d = canvas.getContext('2d');
-    c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
-    drawOutline(parts, canvas);
-    path = navmesh.calculatePath(startPoint, endPoint);
-    drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
-    drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
-    drawPath(path, canvas);
-  }
-
   var tiles = tile_grids["SNESv2"];
   // Get outline of walls in map.
   var shapeArrays = mapParser.parse(tiles);
 
   // Convert and generate navmesh.
   var polys = mapParser.convertShapesToPolys(shapeArrays);
-  var navmesh = new NavMesh();
-  var outline = navmesh.init(polys);
-  var canvas = initCanvasForTiles(tiles);
-  drawPoly(outline, canvas);
-  return;
-  var parts = navmesh.polys;
-  polys.forEach(function(poly) {
-    parts.push(poly);
-  });
 
   // Initialize canvas.
+  var canvas = initCanvasForTiles(tiles);
 
-  // Set random start and end for pathfinding demo.
-  var startPoint = parts[0].centroid();
-  var endPoint = parts[25].centroid();
-
-  getPathAndDrawUpdate(startPoint, endPoint);
-
-  // Draw outline around clicked element, calling back to navmesh function.
-  document.getElementById('c').addEventListener('click', function(evt) {
-    var p = getCanvasPointClicked(evt, this);
-    var shift = evt.shiftKey;
-    var poly = navmesh.findPolyForPoint(p);
-    if (poly) {
-      if (shift) {
-        endPoint = p;
-      } else {
-        startPoint = p;
-      }
-      getPathAndDrawUpdate(startPoint, endPoint);
-    }
-  }, false);
-  
-})
+  drawOutline(polys, canvas);
+});
