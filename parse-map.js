@@ -1,4 +1,5 @@
-define(function() {
+define(['./action-values'],
+function(   ActionValues) {
   // Utilities for generating usable map representations from map tiles.
   var mapParser = function() {}
 
