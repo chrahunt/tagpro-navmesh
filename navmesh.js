@@ -80,6 +80,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // of points representing the center of each of the polygons required to get
   // to the target from the source.
   NavMesh.prototype.calculatePath = function(source, target) {
+    console.log("Calculating."); // DEBUG
     var sourcePoly, targetPoly;
     var path = [];
     sourcePoly = this.findPolyForPoint(source);
@@ -92,6 +93,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     }
 
     path = this._aStar(source, target, this.polys);
+    if (typeof path == 'undefined') return;
     path.push(target);
     return path;
   }
@@ -166,7 +168,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         return "PathfindingException: " + this.message;
       }
     }
-    
+    console.log("A*ing."); // DEBUG
     var sourcePoly = this.findPolyForPoint(source);
     // We're outside of the mesh somehow. Try a few nearby points.
     if (typeof sourcePoly == 'undefined') {
@@ -181,13 +183,14 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         }
       }
       if (typeof sourcePoly == 'undefined') {
-        throw new PathfindingException("Polygon not found for source point.");
+        return;
       }
     }
     var targetPoly = this.findPolyForPoint(target);
 
-    var discoveredPolys = [];
-    var discoveredPoints = [];
+    // Warning, may have compatibility issues.
+    var discoveredPolys = new WeakSet();
+    var discoveredPoints = new WeakSet();
     var pq = new PriorityQueue({ comparator: nodeValue });
     var found = null;
     // Initialize with start location.
@@ -198,17 +201,17 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         found = node;
         break;
       } else {
-        discoveredPolys.push(node.poly);
-        discoveredPoints.push(node.point);
+        discoveredPolys.add(node.poly);
+        discoveredPoints.add(node.point);
       }
       // This may be undefined if there was no polygon found.
-      var neighbors = this.grid[node.poly];
+      var neighbors = this.grid.get(node.poly);
       neighbors.forEach(function(elt) {
         // Get neighbor/point combos that haven't been previously discovered.
-        var neighborFound = (discoveredPolys.indexOf(elt.poly) != -1);
+        var neighborFound = discoveredPolys.has(elt.poly);
 
         elt.edge.points.forEach(function(p) {
-          if (!neighborFound || (discoveredPoints.indexOf(p) == -1))
+          if (!neighborFound || !discoveredPoints.has(p))
             pq.queue({dist: node.dist + euclideanDistance(p, node.point), poly: elt.poly, point: p, parent: node});
         });
       });
@@ -224,7 +227,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
       path.unshift(current.point);
       return path;
     } else {
-      throw new PathfindingException("Goal not found.");
+      return;
     }
   }
 
@@ -233,16 +236,16 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // each polygon. Return value is an object with Poly keys and an array
   // of Poly objects as values, representing the neighboring polygons.
   NavMesh.prototype._generateAdjacencyGrid = function(polys) {
-    var neighbors = {};
+    var neighbors = new WeakMap();
     polys.forEach(function(poly, polyI, polys) {
-      if (neighbors.hasOwnProperty(poly)) {
+      if (neighbors.has(poly)) {
         // Maximum number of neighbors already found.
-        if (neighbors[poly].length == poly.numpoints) {
+        if (neighbors.get(poly).length == poly.numpoints) {
           return;
         }
       } else {
         // Initialize array.
-        neighbors[poly] = new Array();
+        neighbors.set(poly, new Array());
       }
       // Of remaining polygons, find some that are adjacent.
       poly.points.forEach(function(p1, i, points) {
@@ -256,15 +259,15 @@ function(  pp,                PriorityQueue,      ClipperLib) {
             var match = p1.eq(q2) && p2.eq(q1);
             if (match) {
               var edge = new Edge(p1, p2);
-              neighbors[poly].push({ poly: poly2, edge: edge });
-              if (!neighbors.hasOwnProperty(poly2)) {
-                neighbors[poly2] = new Array();
+              neighbors.get(poly).push({ poly: poly2, edge: edge });
+              if (!neighbors.has(poly2)) {
+                neighbors.set(poly2, new Array());
               }
-              neighbors[poly2].push({ poly: poly, edge: edge });
+              neighbors.get(poly2).push({ poly: poly, edge: edge });
             }
             return match;
           });
-          if (neighbors[poly].length == poly.numpoints) break;
+          if (neighbors.get(poly).length == poly.numpoints) break;
         }
       });
     });
@@ -481,13 +484,13 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     var unioned_holes = new ClipperLib.Paths();
     cpr.Execute(ClipperLib.ClipType.ctDifference, unioned_holes, subject_fillType, clip_fillType);
-    unioned_holes.forEach(function(u) {
+    /*unioned_holes.forEach(function(u) {
       if (find(offsetted_holes, u, shpCompare) !== -1) {
         console.log("Found.");
       } else {
         console.log(u);
       }
-    });
+    });*/
     ClipperLib.JS.ScaleDownPaths(unioned_holes, scale);
     polys = new Array();
     unioned_holes.forEach(function(shape) {
