@@ -2,34 +2,28 @@
 
 // A cell represents a contour cell with a value equal to the surrounding cells.
 Cell = function(val) {
-  if (typeof val == "number") {
-    this.value = val;
-    this.array = this._getCellArray(this.value);
+  if (typeof val == "string") {
+    this.array = this._getCellArray(val);
   } else {
     this.array = val;
-    this.value = this._getValue(this.array);
   }
 }
 
 // Given a length-4 array specifying the values for the nw, ne, se, sw quadrants
-// of a contour cell, return it's integer value. Each quadrant should have value
-// 0-3.
-Cell.prototype._getValue = function(array) {
-  return array[0] * 64 + array[1] * 32 + array[2] * 8 + array[3] * 1;
+// of a contour cell, return a string uniquely representing it as n1-n2-n3-n4.
+Cell.prototype.toString = function() {
+  return this.array[0] + "-" + this.array[1] + "-" + this.array[2] + "-" + this.array[3];
 }
 
-// Given a number from 0-255, return the cell that would have generated it.
-Cell.prototype._getCellArray = function(n) {
+// Given a string representing a cell, return the cell that would have generated it.
+Cell.prototype._getCellArray = function(str) {
   var cell = new Array(4);
+  var result = /(\d+)-(\d+)-(\d+)-(\d+)/.exec(str);
 
-  cell[3] = n % 4;
-  n = Math.floor(n / 4);
-  cell[2] = n % 4;
-  n = Math.floor(n / 4);
-  cell[1] = n % 4;
-  n = Math.floor(n / 4);
-  cell[0] = n % 4;
-  n = Math.floor(n / 4);
+  cell[3] = +result[1];
+  cell[2] = +result[2];
+  cell[1] = +result[3];
+  cell[0] = +result[4];
   
   return cell;
 }
@@ -71,8 +65,6 @@ Template = function(array, dir, exit_location) {
   this.array = this._filterArray(this.raw_array);
   this.dir = dir;
   this.cell = new Cell(this.array);
-  this.value = this.cell.value;
-  this.mask = this._getMask(this.array);
 }
 
 // Return a template rotated n times.
@@ -102,22 +94,8 @@ Template.prototype._filterArray = function(array) {
   return val;
 }
 
-// Return the mask for an entrance/exit node such that, when & with 
-// a contour cell, it will produce the same number as the value of the node if the
-// contour cell contains that arrangement.
-Template.prototype._getMask = function(array) {
-  var mask = new Array(4);
-  for (var i = 0; i < 4; i++) {
-    if (array[i])
-      mask[i] = 3;
-    else
-      mask[i] = 0;
-  }
-  return this._getValue(mask);
-}
-
-Template.prototype._getValue = function(array) {
-  return this.cell._getValue(array);
+Template.prototype.toString = function() {
+  return this.cell.toString();
 }
 
 Template.prototype._rotateArray = function(array, n) {
@@ -373,11 +351,17 @@ for (var i = 0; i < definitions; i++) {
 
 // Array with every possible cell permutation.
 var cells = [];
-for (var i = 0; i < 256; i++) {
-  cells.push(new Cell(i));
+for (var i = 0; i < 4; i++) {
+  for (var j = 0; j < 4; j++) {
+    for (var k = 0; k < 4; k++) {
+      for (var l = 0; l < 4; l++) {
+        cells.push(new Cell(i + "-" + j + "-" + k + "-" + l));
+      }
+    }
+  }
 }
 
-var action_values = new Array(256);
+var action_values = {};
 // Array that holds the cell itself along with the number of matched entrances
 // and exits.
 var broken_cells = [];
@@ -407,27 +391,27 @@ cells.forEach(function(cell, index) {
   if (matched_exits.length == 1 && matched_entrances.length == 1) {
     var matched_exit = matched_exits[0];
     var matched_entrance = matched_entrances[0];
-    action_values[cell.value] = {
+    action_values[cell.toString()] = {
       v: matched_exit.dir !== matched_entrance.dir,
       loc: matched_exit.dir
     };
   } else if (matched_entrances.length == 0 && matched_exits.length == 0) {
     // No entrances or exits found.
-    action_values[cell.value] = {
+    action_values[cell.toString()] = {
       v: false,
       loc: "none"
     };
   } else if (matched_exits.length == matched_entrances.length) {
     // Equal lengths but more than 1 matched set.
     // Associate proper entrance values with proper exit values.
-    action_values[cell.value] = [];
+    action_values[cell.toString()] = [];
     var locs = [];
     matched_entrances.forEach(function(entrance) {
       var exit = entrance.getExit(matched_exits);
       locs.push({in_dir: entrance.dir, out_dir: exit.dir});
     });
     locs.forEach(function(loc) {
-      action_values[cell.value].push({
+      action_values[cell.toString()].push({
         v: loc.in_dir !== loc.out_dir,
         loc: loc
       });
@@ -463,7 +447,7 @@ function drawBadCells(cells) {
 
     // Write information.
     context.fillStyle = 'black';
-    context.fillText(cell.value, draw_loc.x + 5, draw_loc.y + 10)
+    context.fillText(cell.toString(), draw_loc.x + 5, draw_loc.y + 10)
     context.fillText("ents:" + matched_entrances.length, draw_loc.x + 5, draw_loc.y + 20)
     context.fillText("exts:" + matched_exits.length, draw_loc.x + 5, draw_loc.y + 35)
 
@@ -505,6 +489,7 @@ function getIndexForLoc(loc) {
   return index;
 }
 
+/*
 // Draw outline around clicked element, calling back to navmesh function.
 document.getElementById('c').addEventListener('click', function(evt) {
   this.getContext('2d').clearRect(0, 0, this.width, this.height);
@@ -541,3 +526,4 @@ document.getElementById('c').addEventListener('click', function(evt) {
   // Draw template.
   drawCell(shape, this, loc, fill);
 }, false);
+*/
