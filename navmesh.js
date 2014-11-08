@@ -11,6 +11,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  
   // Edges are used to represent the border between two adjacent
   // polygons.
   Edge = function(p1, p2) {
@@ -18,6 +19,20 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     this.p2 = p2;
     this.center = p1.add(p2.sub(p1).div(2));
     this.points = [this.p1, this.center, this.p2];
+  }
+
+  function CCW(p1, p2, p3) {
+    a = p1.x; b = p1.y;
+    c = p2.x; d = p2.y;
+    e = p3.x; f = p3.y;
+    return (f - b) * (c - a) > (d - b) * (e - a);
+  }
+
+  // from http://stackoverflow.com/a/16725715
+  Edge.prototype.intersects = function(edge) {
+    var q1 = edge.p1, q2 = edge.p2;
+    if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
+    return (CCW(this.p1, q1, q2) != CCW(this.p2, q1, q2)) && (CCW(this.p1, this.p2, q1) != CCW(this.p1, this.p2, q2));
   }
 
   // A NavMesh represents the roll-able area of the map and gives
@@ -29,7 +44,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   //   var navmesh = new NavMesh(polys);
   //   var path = navmesh.calculatePath(currentlocation, targetLocation);
   var NavMesh = function(polys) {
-    if (typeof polys === 'undefined') { return; }
+    if (typeof polys == 'undefined') { return; }
     this.init(polys);
   };
 
@@ -49,6 +64,16 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     this.polys = this._generatePartition(outline, polys);
     this.grid = this._generateAdjacencyGrid(this.polys);
+
+    // Keep track of original polygons, generate their edges in advance.
+    polys.unshift(outline);
+    this.original_polys = polys;
+    this.obstacle_edges = [];
+    this.original_polys.forEach(function(poly) {
+      for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
+        this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
+      }
+    }, this);
   }
 
   // Returns a path from the source point to the target point. Path has the form
@@ -71,9 +96,49 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     return path;
   }
 
-  // Returns list of polys needed to get from source to target.
-  // Currently uses distance from/to centroids as measure of value for
-  // paths.
+  // Given a point, return the polygon that contains it, if any.
+  // May implement a more efficient method later.
+  NavMesh.prototype.findPolyForPoint = function(p) {
+    var i, poly;
+    for (i in this.polys) {
+      poly = this.polys[i];
+      if (poly.containsPoint(p)) {
+        return poly;
+      }
+    }
+  }
+
+  // Return true if p1 is visible from p2. The offset outline and holes are
+  // used as obstacles in this case.
+  NavMesh.prototype.checkVisible = function(p1, p2) {
+    var edge = new Edge(p1, p2);
+    //console.log("Checking if this edge intersects any of these.");
+    window.BotEdge = edge;
+    checkEdge = function(edges, edge_index, my_edge) {
+      var thisEdge = edges[edge_index];
+      window.BotEdge2 = thisEdge;
+      console.log("Checking if this edge and the red one intersect.");
+      if (thisEdge.intersects(my_edge)) {
+        console.log("They intersect!");
+      } else {
+        console.log("They don't intersect!");
+      }
+      if (edge_index !== edges.length - 1) {
+        setTimeout(function() {
+          checkEdge(edges, edge_index + 1, my_edge);
+        }, 1000);
+      }
+    }
+    //checkEdge(this.obstacle_edges, 0, edge);
+    var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
+    //console.log("Visible: " + !blocked);
+    return !blocked;
+  }
+
+  // Computes path from source to target, using sides and centers of the edges
+  // between adjacent polygons. source and target are Points and polys should
+  // be the final partitioned map.
+  // @throws  
   NavMesh.prototype._aStar = function(source, target, polys) {
     // Compares the value of two nodes.
     function nodeValue(node1, node2) {
@@ -94,8 +159,31 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     function heuristic(p) {
       return euclideanDistance(p, target);
     }
+
+    function PathfindingException(m) {
+      this.message = m;
+      this.toString = function() {
+        return "PathfindingException: " + this.message;
+      }
+    }
     
     var sourcePoly = this.findPolyForPoint(source);
+    // We're outside of the mesh somehow. Try a few nearby points.
+    if (typeof sourcePoly == 'undefined') {
+      var offsetSource = [new Point(5, 0), new Point(-5, 0), new Point(0, -5), new Point(0, 5)];
+      for (var i = 0; i < offsetSource.length; i++) {
+        // Make new point.
+        var point = source.add(offsetSource[i]);
+        sourcePoly = this.findPolyForPoint(point);
+        if (!(typeof sourcePoly == 'undefined')) {
+          source = point;
+          break;
+        }
+      }
+      if (typeof sourcePoly == 'undefined') {
+        throw new PathfindingException("Polygon not found for source point.");
+      }
+    }
     var targetPoly = this.findPolyForPoint(target);
 
     var discoveredPolys = [];
@@ -113,6 +201,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         discoveredPolys.push(node.poly);
         discoveredPoints.push(node.point);
       }
+      // This may be undefined if there was no polygon found.
       var neighbors = this.grid[node.poly];
       neighbors.forEach(function(elt) {
         // Get neighbor/point combos that haven't been previously discovered.
@@ -135,7 +224,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
       path.unshift(current.point);
       return path;
     } else {
-      return null;
+      throw new PathfindingException("Goal not found.");
     }
   }
 
@@ -197,17 +286,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     var partitioner = new Partition();
 
     return partitioner.convexPartition(outline, holes);
-  }
-
-  // Given a point, return the polygon that contains it, if any.
-  NavMesh.prototype.findPolyForPoint = function(p) {
-    var i, poly;
-    for (i in this.polys) {
-      poly = this.polys[i];
-      if (poly.containsPoint(p)) {
-        return poly;
-      }
-    }
   }
 
   // private
@@ -288,14 +366,61 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // private
   // Offset the polygons such that there is a 'offset' unit buffer between the sides
   // of the outline and around the obstacles. This buffer makes it so that the
-  // mesh truly represents the movable area in the map.
+  // mesh truly represents the movable area in the map. 'offset' is optional and has
+  // a default value of 18 (which is half the size of a ball in TagPro).
+  // Assumes vertices defining interior shapes (like the main outline of an enclosed map)
+  // are given in CCW order and obstacles are given in CW order.
   NavMesh.prototype._offsetPolys = function(polys, offset) {
-    if (typeof offset == 'undefined') offset = 19;
-    var outline_i = this._getLargestPoly(polys);
-    var outline = polys.splice(outline_i, 1)[0];
+    function find(arr, obj, cmp) {
+      if (typeof cmp !== 'undefined') {
+        for (var i = 0; i < arr.length; i++) {
+          if (cmp(arr[i], obj)) {
+            return i;
+          }
+        }
+        return -1;
+      }
+    }
+
+    // Compare two array locations.
+    function shpCompare(elt1, elt2) {
+      if (elt1.length !== elt2.length) return false;
+      for (var i = 0; i < elt1.length; i++) {
+        if (elt1[i].X != elt2[i].X || elt1[i].Y != elt2[i].Y) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Deep copy given object/array.
+    function copy(o) {
+      var out, v, key;
+      out = Array.isArray(o) ? [] : {};
+      for (key in o) {
+        v = o[key];
+        out[key] = (typeof v === "object") ? copy(v) : v;
+      }
+      return out;
+    }
+
+    if (typeof offset == 'undefined') offset = 18; // ball radius / 2
+    var indices = [];
+    // For the moment assumes that there is only 1 'outline'.
+    var outline = polys.filter(function(poly, index) {
+      if (poly.getOrientation() == "CCW") {
+        indices.push(index);
+        return true;
+      }
+      return false;
+    });
+    var outline_i = indices[0];
+    outline = outline[0];
+    polys.splice(outline_i, 1);
+
 
     // Handle outline.
-    // First, create a shape with the map as the interior.
+    // First, create a shape with the outline as the interior.
     var scale = 100;
     var cOutline = this._convertPolyToClipper(outline);
     var boundingShape = this._getBoundingShape(outline);
@@ -310,7 +435,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     var solution_paths = new ClipperLib.Paths();
     cpr.Execute(ClipperLib.ClipType.ctDifference, solution_paths, subject_fillType, clip_fillType);
 
-    // Once we have the shape as created above, inflate it.
+    // Once we have the shape as created above, inflate it. This works better than treating the outline
+    // as the exterior of a shape and deflating it.
     var co = new ClipperLib.ClipperOffset();
     co.AddPaths(solution_paths, true);
     var offsetted_paths = new ClipperLib.Paths();
@@ -320,11 +446,12 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     co.MiterLimit = 2;
     co.arcTolerance = 0.25;
     co.Execute(offsetted_paths, offset * scale);
-    ClipperLib.JS.ScaleDownPaths(offsetted_paths, scale);
-    console.log(offsetted_paths);
-    var new_outline = this._convertClipperToPoly(offsetted_paths[1]);
 
-    // Handle holes.
+    // Get only the path defining the outline we were interested in, discarding the exterior bounding
+    // shape.
+    var offsetted_outline = offsetted_paths[1];
+
+    // Here we are going to inflate the holes.
     co.Clear();
 
     var hole_shapes = new Array();
@@ -335,22 +462,43 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     ClipperLib.JS.ScaleUpPaths(hole_shapes, scale);
 
+    // Inflate holes.
     var offsetted_holes = new ClipperLib.Paths();
     co.AddPaths(hole_shapes, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
     co.Execute(offsetted_holes, offset * scale);
 
+    // Merge everything together.
+    // Copy and change orientation of all holes.
+    var offsetted_shapes = copy(offsetted_holes);
+    /*offsetted_shapes.forEach(function(shape) {
+      shape.reverse();
+    });*/
+    //offsetted_shapes.push(offsetted_outline);
+
     cpr.Clear();
-    cpr.AddPaths(offsetted_holes, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPath(offsetted_outline, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(offsetted_shapes, ClipperLib.PolyType.ptClip, true);
 
     var unioned_holes = new ClipperLib.Paths();
-    cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_holes, subject_fillType, clip_fillType);
+    cpr.Execute(ClipperLib.ClipType.ctDifference, unioned_holes, subject_fillType, clip_fillType);
+    unioned_holes.forEach(function(u) {
+      if (find(offsetted_holes, u, shpCompare) !== -1) {
+        console.log("Found.");
+      } else {
+        console.log(u);
+      }
+    });
     ClipperLib.JS.ScaleDownPaths(unioned_holes, scale);
     polys = new Array();
     unioned_holes.forEach(function(shape) {
       polys.push(this._convertClipperToPoly(shape));
     }, this);
 
-    polys.unshift(new_outline);
+    polys.forEach(function(poly) {
+      console.log(poly.getOrientation());
+    });
+
+    //polys.unshift(new_outline);
     return polys;
   }
 
@@ -375,7 +523,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   }
 
   // private
-  // Get bounds of a given polygon.
+  // Get bounds of a given polygon. Returns an object containing minX, minY, maxX, maxY.
   NavMesh.prototype._getBounds = function(poly) {
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     poly.points.forEach(function(p) {
@@ -403,8 +551,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     shape.push({X: bounds.maxX, Y: bounds.minY});
     return shape;
   }
-
-
 
   return NavMesh;
 });
