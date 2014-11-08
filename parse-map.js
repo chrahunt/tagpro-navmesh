@@ -9,9 +9,16 @@ function(   ActionValues) {
   mapParser.parse = function(tiles) {
     // Returns 1 if a cell is a 'bad' cell (tile or otherwise to be avoided), 0 otherwise.
     function isBadCell(elt) {
-      var bad_cells = [0, 1, 7, 1.1, 1.2, 1.3, 1.4];
+      var bad_cells = [0, 1, 1.1, 1.2, 1.3, 1.4];
       if(bad_cells.indexOf(elt) !== -1) {
-        return 1;
+        // Ensure empty spaces get mapped to full tiles so outside of
+        // map isn't traced.
+        if (elt == 0) {
+          return 1;
+        } else {
+          return elt;
+        }
+        return elt;
       } else {
         return 0;
       }
@@ -25,19 +32,52 @@ function(   ActionValues) {
       });
     }
 
-    // Given a rectangular 2D array, returns a 2D array with dimensions one
-    // less in each direction where each cell is composed of the values of
-    // the four surrounding it in the original array, given as an array of
-    // values in CCW order starting from the upper left quadrant.
+    /*
+     * Given a rectangular 2D array, returns a 2D array with dimensions one
+     * less in each direction where each cell is composed of the values of
+     * the four surrounding it in the original array, given as an array of
+     * values in CCW order starting from the upper left quadrant. e.g. given
+     * [[1, 0, 1],
+     *  [1, 0, 0],
+     *  [1, 1, 1]]
+     * the tiles
+     * [1, 0,  [0, 1,  [1, 0,  [0, 0  
+     *  1, 0]   0, 0]   1, 1]   1, 1]
+     * would be generated.
+     * Things get more complicated to accommodate representing diagonal tiles.
+     * Within a contour tile (a tile in the resulting contour grid) the following
+     * values in a quadrant of the tile hold the meaning specified:
+     *   2 - the lower diagonal of that quadrant is filled
+     *   3 - the upper diagonal of that quadrant is filled
+     * #todo: elaborate further if needed.
+     */
     function generateContourGrid(arr) {
       // Generate grid for holding values.
       var contour_grid = new Array(arr.length - 1);
       for (var n = 0; n < contour_grid.length; n++) {
         contour_grid[n] = new Array(arr[0].length - 1);
       }
+      var corners = [1.1, 1.2, 1.3, 1.4];
+      // Specifies the resulting values for the above corner values. The index
+      // of the objects in this array corresponds to the proper values for the
+      // quadrant of the same index.
+      var corner_values = [
+        {1.1: 3, 1.2: 0, 1.3: 2, 1.4: 1},
+        {1.1: 0, 1.2: 3, 1.3: 1, 1.4: 2},
+        {1.1: 3, 1.2: 1, 1.3: 2, 1.4: 0},
+        {1.1: 1, 1.2: 3, 1.3: 0, 1.4: 2}
+      ];
       for (var i = 0; i < (arr.length - 1); i++) {
         for (var j = 0; j < (arr[0].length - 1); j++) {
-          contour_grid[i][j] = [arr[i][j], arr[i][j+1], arr[i+1][j+1], arr[i+1][j]];
+          var cell = [arr[i][j], arr[i][j+1], arr[i+1][j+1], arr[i+1][j]];
+          // Convert corner tiles to appropriate representation.
+          cell.forEach(function(val, i, cell) {
+            if (corners.indexOf(val) !== -1) {
+              cell[i] = corner_values[i][val];
+            }
+          });
+
+          contour_grid[i][j] = cell;
         }
       }
       return contour_grid;
@@ -53,53 +93,8 @@ function(   ActionValues) {
     // cell.
     // There will never be a vertex without a next direction.
     function getAction(cell) {
-      var num = cell[0] * 8 + cell[1] * 4 + cell[2] * 2 + cell[3];
-      switch(num) {
-        case 0:
-          return {v: false, loc: "none"};
-        case 1:
-          return {v: true, loc: "down"};
-        case 2:
-          return {v: true, loc: "right"};
-        case 3:
-          return {v: false, loc: "right"};
-        case 4:
-          return {v: true, loc: "up"};
-        case 5:
-          return {v: true, loc: function(prev_dir) {
-            if (prev_dir == "right") {
-              return "down";
-            } else {
-              return "up";
-            }
-          }};
-        case 6:
-          return {v: false, loc: "up"};
-        case 7:
-          return {v: true, loc: "up"};
-        case 8:
-          return {v: true, loc: "left"};
-        case 9:
-          return {v: false, loc: "down"};
-        case 10:
-          return {v: true, loc: function(prev_dir) {
-            if (prev_dir == "down") {
-              return "left";
-            } else {
-              return "right";
-            }
-          }};
-        case 11:
-          return {v: true, loc: "right"};
-        case 12:
-          return {v: false, loc: "left"};
-        case 13:
-          return {v: true, loc: "down"};
-        case 14:
-          return {v: true, loc: "left"};
-        case 15:
-          return {v: false, loc: "none"};
-      }
+      var str = cell[0] + "-" + cell[1] + "-" + cell[2] + "-" + cell[3];
+      return ActionValues[str];
     }
 
     // Returns the location of obj in arr with equality determined by cmp.
@@ -128,7 +123,16 @@ function(   ActionValues) {
     function generateShapes(actionInfo) {
       // Total number of cells.
       var total = actionInfo.length * actionInfo[0].length;
-
+      var directions = {
+        "n": [-1, 0],
+        "e": [0, 1],
+        "s": [1, 0],
+        "w": [0, -1],
+        "ne": [-1, 1],
+        "se": [1, 1],
+        "sw": [1, -1],
+        "nw": [-1, -1]
+      };
       // Takes the current location and direction at this point and
       // returns the next location to check. Returns null if this cell is
       // not part of a shape.
@@ -136,16 +140,10 @@ function(   ActionValues) {
         var drow = 0, dcol = 0;
         if (dir == "none") {
           return null;
-        } else if (dir == "up") {
-          drow = -1;
-        } else if (dir == "down") {
-          drow = 1;
-        } else if (dir == "left") {
-          dcol = -1;
-        } else if (dir == "right") {
-          dcol = 1;
+        } else {
+          var offset = directions[dir];
+          return {r: elt.r + offset[0], c: elt.c + offset[1]};
         }
-        return {r: elt.r + drow, c: elt.c + dcol};
       }
 
       // Get the next cell, from left to right, top to bottom. Returns null
@@ -158,6 +156,11 @@ function(   ActionValues) {
         }
         return null;
       }
+
+      // Get identifier for given node and direction
+      function getIdentifier(node, dir) {
+        return "r" + node.r + "c" + node.c + "d" + dir;
+      }
       
       var discovered = [];
       var node = {r: 0, c: 0};
@@ -165,6 +168,8 @@ function(   ActionValues) {
       var current_shape = [];
       var shape_node_start = null;
       var last_action = null;
+      // Object to track location + actions that have been taken.
+      var taken_actions = {};
 
       // Iterate until all nodes have been visited.
       while (discovered.length !== total) {
@@ -179,18 +184,53 @@ function(   ActionValues) {
         }
 
         var action = actionInfo[node.r][node.c];
-        var dir = action.loc;
-        // And if this is the first element of the shape?
-        if (typeof dir == 'function') {
-          dir = dir(last_action);
+        var dir;
+        // If action has multiple possibilities.
+        if (action instanceof Array) {
+          // Part of a shape, find the info with that previous action as
+          // in_dir.
+          if (last_action !== "none") {
+            var action_found = false;
+            for (var i = 0; i < action.length; i++) {
+              var this_action = action[i];
+              if (this_action["loc"]["in_dir"] == last_action) {
+                dir = this_action["loc"]["out_dir"];
+                action_found = true;
+                break;
+              }
+            }
+
+            if (!action_found) {
+              throw "Error!";
+            }
+          } else {
+            // Find the first action that has not been taken previously.
+            var action_found = false;
+            for (var i = 0; i < action.length; i++) {
+              var this_action = action[i];
+              if (!taken_actions[getIdentifier(node, this_action["loc"]["out_dir"])]) {
+                dir = this_action["loc"]["out_dir"];
+                action_found = true;
+                break;
+              }
+            }
+            if (!action_found) {
+              throw "Error!";
+            }
+          }
+        } else { // Action only has single possibility.
+          dir = action.loc;
         }
+
+        // Set node/action as having been visited.
+        taken_actions[getIdentifier(node, dir)] = true;
+
         last_action = dir;
         var next = nextNeighbor(node, dir);
         if (next) { // Part of a shape.
           // Save location for restarting after this shape has been defined.
           var first = false;
           if (current_shape.length == 0) {
-            //console.log('setting');
             first = true;
             shape_node_start = node;
             shape_node_start_action = last_action;
@@ -220,7 +260,7 @@ function(   ActionValues) {
             node = nextCell(node);
           }
         }
-      }
+      } // end while
       return shapes;
     }
 
