@@ -111,7 +111,7 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     drawPath(path, canvas);
   }
 
-  var tiles = tile_grids["SNESv2"];
+  var tiles = tile_grids["SuperDuperStamp"];
   // Get outline of walls in map.
   var shapeArrays = mapParser.parse(tiles);
 
@@ -120,8 +120,8 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   var navmesh = new NavMesh();
   var outline = navmesh.init(polys);
   var canvas = initCanvasForTiles(tiles);
-  drawPoly(outline, canvas);
-  return;
+  //drawPoly(outline, canvas);
+  //return;
   var parts = navmesh.polys;
   polys.forEach(function(poly) {
     parts.push(poly);

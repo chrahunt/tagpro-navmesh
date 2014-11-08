@@ -61,7 +61,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     // Determine polygon that should be used as the outline.
     var outline_i = this._getLargestPoly(polys);
     var outline = polys.splice(outline_i, 1)[0];
-    return outline;
+
     this.polys = this._generatePartition(outline, polys);
     this.grid = this._generateAdjacencyGrid(this.polys);
 
@@ -366,7 +366,10 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // private
   // Offset the polygons such that there is a 'offset' unit buffer between the sides
   // of the outline and around the obstacles. This buffer makes it so that the
-  // mesh truly represents the movable area in the map.
+  // mesh truly represents the movable area in the map. 'offset' is optional and has
+  // a default value of 18 (which is half the size of a ball in TagPro).
+  // Assumes vertices defining interior shapes (like the main outline of an enclosed map)
+  // are given in CCW order and obstacles are given in CW order.
   NavMesh.prototype._offsetPolys = function(polys, offset) {
     function find(arr, obj, cmp) {
       if (typeof cmp !== 'undefined') {
@@ -390,8 +393,20 @@ function(  pp,                PriorityQueue,      ClipperLib) {
       return true;
     }
 
+    // Deep copy given object/array.
+    function copy(o) {
+      var out, v, key;
+      out = Array.isArray(o) ? [] : {};
+      for (key in o) {
+        v = o[key];
+        out[key] = (typeof v === "object") ? copy(v) : v;
+      }
+      return out;
+    }
+
     if (typeof offset == 'undefined') offset = 18; // ball radius / 2
     var indices = [];
+    // For the moment assumes that there is only 1 'outline'.
     var outline = polys.filter(function(poly, index) {
       if (poly.getOrientation() == "CCW") {
         indices.push(index);
@@ -420,7 +435,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     var solution_paths = new ClipperLib.Paths();
     cpr.Execute(ClipperLib.ClipType.ctDifference, solution_paths, subject_fillType, clip_fillType);
 
-    // Once we have the shape as created above, inflate it.
+    // Once we have the shape as created above, inflate it. This works better than treating the outline
+    // as the exterior of a shape and deflating it.
     var co = new ClipperLib.ClipperOffset();
     co.AddPaths(solution_paths, true);
     var offsetted_paths = new ClipperLib.Paths();
@@ -430,10 +446,12 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     co.MiterLimit = 2;
     co.arcTolerance = 0.25;
     co.Execute(offsetted_paths, offset * scale);
-    //console.log(offsetted_paths);
+
+    // Get only the path defining the outline we were interested in, discarding the exterior bounding
+    // shape.
     var offsetted_outline = offsetted_paths[1];
 
-    // Handle holes.
+    // Here we are going to inflate the holes.
     co.Clear();
 
     var hole_shapes = new Array();
@@ -449,14 +467,20 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     co.AddPaths(hole_shapes, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
     co.Execute(offsetted_holes, offset * scale);
 
-    var offsetted_shapes = offsetted_holes.slice();
-    offsetted_shapes.push(offsetted_paths[1]);
+    // Merge everything together.
+    // Copy and change orientation of all holes.
+    var offsetted_shapes = copy(offsetted_holes);
+    /*offsetted_shapes.forEach(function(shape) {
+      shape.reverse();
+    });*/
+    //offsetted_shapes.push(offsetted_outline);
 
     cpr.Clear();
-    cpr.AddPaths(offsetted_shapes, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPath(offsetted_outline, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(offsetted_shapes, ClipperLib.PolyType.ptClip, true);
 
     var unioned_holes = new ClipperLib.Paths();
-    cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_holes, subject_fillType, clip_fillType);
+    cpr.Execute(ClipperLib.ClipType.ctDifference, unioned_holes, subject_fillType, clip_fillType);
     unioned_holes.forEach(function(u) {
       if (find(offsetted_holes, u, shpCompare) !== -1) {
         console.log("Found.");
@@ -469,6 +493,10 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     unioned_holes.forEach(function(shape) {
       polys.push(this._convertClipperToPoly(shape));
     }, this);
+
+    polys.forEach(function(poly) {
+      console.log(poly.getOrientation());
+    });
 
     //polys.unshift(new_outline);
     return polys;
@@ -495,7 +523,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   }
 
   // private
-  // Get bounds of a given polygon.
+  // Get bounds of a given polygon. Returns an object containing minX, minY, maxX, maxY.
   NavMesh.prototype._getBounds = function(poly) {
     var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     poly.points.forEach(function(p) {
@@ -523,8 +551,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     shape.push({X: bounds.maxX, Y: bounds.minY});
     return shape;
   }
-
-
 
   return NavMesh;
 });
