@@ -95,7 +95,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     path = this._aStar(source, target, this.polys);
     if (typeof path == 'undefined') return;
     path.push(target);
-    return path;
+    // Remove first entry, which is current position.
+    return path.slice(1);
   }
 
   // Given a point, return the polygon that contains it, if any.
