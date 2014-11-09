@@ -194,6 +194,7 @@ function(   ActionValues) {
             for (var i = 0; i < action.length; i++) {
               var this_action = action[i];
               if (this_action["loc"]["in_dir"] == last_action) {
+                action = this_action;
                 dir = this_action["loc"]["out_dir"];
                 action_found = true;
                 break;
@@ -209,6 +210,7 @@ function(   ActionValues) {
             for (var i = 0; i < action.length; i++) {
               var this_action = action[i];
               if (!taken_actions[getIdentifier(node, this_action["loc"]["out_dir"])]) {
+                action = this_action
                 dir = this_action["loc"]["out_dir"];
                 action_found = true;
                 break;
