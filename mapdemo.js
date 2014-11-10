@@ -98,7 +98,7 @@ function( mapParser,   pp,              tile_grids) {
     return new Point(e.clientX - rect.left, e.clientY - rect.top);
   }
 
-  var tiles = tile_grids["SNESv2"];
+  var tiles = tile_grids["Volt"];
   // Get outline of walls in map.
   var shapeArrays = mapParser.parse(tiles);
 

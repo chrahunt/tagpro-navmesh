@@ -32,6 +32,31 @@ function(   ActionValues) {
       });
     }
 
+    function preprocess(arr) {
+      function identifier(cell) {
+        var str = cell[0] + "-" + cell[1] + "-" + cell[2] + "-" + cell[3];
+        return str;
+      }
+      var bad_arrangements = new Set();
+      bad_arrangements.add(identifier([1, 1, 1.4, 1]));
+      bad_arrangements.add(identifier([1, 1, 1, 1.3]));
+      bad_arrangements.add(identifier([1, 1.1, 1, 1]));
+      bad_arrangements.add(identifier([1.2, 1, 1, 1]));
+      for (var i = 0; i < (arr.length - 1); i++) {
+        for (var j = 0; j < (arr[0].length - 1); j++) {
+          var cell = [arr[i][j], arr[i][j+1], arr[i+1][j+1], arr[i+1][j]];
+          // Check if in bad arrangements.
+          if (bad_arrangements.has(identifier(cell))) {
+            arr[i][j] = 1;
+            arr[i][j+1] = 1;
+            arr[i+1][j+1] = 1;
+            arr[i+1][j] = 1;
+          }
+        }
+      }
+      return arr;
+    }
+
     /*
      * Given a rectangular 2D array, returns a 2D array with dimensions one
      * less in each direction where each cell is composed of the values of
@@ -351,9 +376,13 @@ function(   ActionValues) {
       // Get rid of all but wall/obstacle cells.
       var threshold_tiles = map2d(tiles, isBadCell);
 
+      // Preprocess tiles to get rid of diagonal tiles that cause problems
+      // outside bounds of map.
+      var preprocessed_tiles = preprocess(threshold_tiles);
+
       // Generate contour grid, essentially a grid whose cells are at the
       // intersection of every set of 4 cells in the original map.
-      var contour_grid_2 = generateContourGrid(threshold_tiles);
+      var contour_grid_2 = generateContourGrid(preprocessed_tiles);
 
       // Get tile vertex and actions for each cell in contour grid.
       var tile_actions = map2d(contour_grid_2, getAction);
