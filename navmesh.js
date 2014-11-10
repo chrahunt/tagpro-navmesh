@@ -11,30 +11,8 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  Edge = pp.Edge;
   
-  // Edges are used to represent the border between two adjacent
-  // polygons.
-  Edge = function(p1, p2) {
-    this.p1 = p1;
-    this.p2 = p2;
-    this.center = p1.add(p2.sub(p1).div(2));
-    this.points = [this.p1, this.center, this.p2];
-  }
-
-  function CCW(p1, p2, p3) {
-    a = p1.x; b = p1.y;
-    c = p2.x; d = p2.y;
-    e = p3.x; f = p3.y;
-    return (f - b) * (c - a) > (d - b) * (e - a);
-  }
-
-  // from http://stackoverflow.com/a/16725715
-  Edge.prototype.intersects = function(edge) {
-    var q1 = edge.p1, q2 = edge.p2;
-    if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
-    return (CCW(this.p1, q1, q2) != CCW(this.p2, q1, q2)) && (CCW(this.p1, this.p2, q1) != CCW(this.p1, this.p2, q2));
-  }
-
   // A NavMesh represents the roll-able area of the map and gives
   // utilities for pathfinding.
   // A NavMesh may be initialized with the polygons representing the
