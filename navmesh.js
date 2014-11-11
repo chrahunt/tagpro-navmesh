@@ -97,7 +97,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     window.BotEdge = edge;
     checkEdge = function(edges, edge_index, my_edge) {
       var thisEdge = edges[edge_index];
-      window.BotEdge2 = thisEdge;
+      //window.BotEdge2 = thisEdge;
       console.log("Checking if this edge and the red one intersect.");
       if (thisEdge.intersects(my_edge)) {
         console.log("They intersect!");

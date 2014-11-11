@@ -52,6 +52,10 @@ function(poly2tri) {
     return Math.sqrt(diff.dot(diff))
   }
 
+  Point.prototype.len = function() {
+    return this.dist(new Point(0, 0));
+  }
+
   Point.prototype.normalize = function() {
     var n = this.dist(new Point(0, 0));
     if (n > 0) return this.div(n);
