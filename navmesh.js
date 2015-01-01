@@ -58,7 +58,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   // of points representing the center of each of the polygons required to get
   // to the target from the source.
   NavMesh.prototype.calculatePath = function(source, target) {
-    console.log("Calculating."); // DEBUG
     var sourcePoly, targetPoly;
     var path = [];
     sourcePoly = this.findPolyForPoint(source);
@@ -147,7 +146,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         return "PathfindingException: " + this.message;
       }
     }
-    console.log("A*ing."); // DEBUG
+
     var sourcePoly = this.findPolyForPoint(source);
     // We're outside of the mesh somehow. Try a few nearby points.
     if (typeof sourcePoly == 'undefined') {
@@ -185,7 +184,17 @@ function(  pp,                PriorityQueue,      ClipperLib) {
       }
       // This may be undefined if there was no polygon found.
       var neighbors = this.grid.get(node.poly);
-      neighbors.forEach(function(elt) {
+      for (var i = 0; i < neighbors.length; i++) {
+        var elt = neighbors[i];
+        var neighborFound = discoveredPolys.has(elt.poly);
+
+        for (var j = 0; j < elt.edge.points.length; j++) {
+          var p = elt.edge.points[j];
+          if (!neighborFound || !discoveredPoints.has(p))
+            pq.queue({dist: node.dist + euclideanDistance(p, node.point), poly: elt.poly, point: p, parent: node});
+        }
+      }
+      /*neighbors.forEach(function(elt) {
         // Get neighbor/point combos that haven't been previously discovered.
         var neighborFound = discoveredPolys.has(elt.poly);
 
@@ -193,7 +202,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
           if (!neighborFound || !discoveredPoints.has(p))
             pq.queue({dist: node.dist + euclideanDistance(p, node.point), poly: elt.poly, point: p, parent: node});
         });
-      });
+      });*/
     }
 
     if (found) {
@@ -276,7 +285,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     var best_poly = polys[0];
     var best_poly_index = 0;
     var best_poly_area = Math.abs(polys[0].getArea());
-    console.log(polys[0].getArea());
+
     for (var i = 1; i < polys.length; i++) {
       if (Math.abs(polys[i].getArea()) > best_poly_area) {
         best_poly = polys[i];
@@ -475,10 +484,6 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     unioned_holes.forEach(function(shape) {
       polys.push(this._convertClipperToPoly(shape));
     }, this);
-
-    polys.forEach(function(poly) {
-      console.log(poly.getOrientation());
-    });
 
     //polys.unshift(new_outline);
     return polys;

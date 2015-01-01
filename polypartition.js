@@ -361,8 +361,6 @@ function(poly2tri) {
       return poly.getArea() > 5;
     });
 
-    console.log("Triangles generated: " + triangles.length);
-
     for (var s1 = 0; s1 < triangles.length; s1++) {
       var poly1 = triangles[s1];
       var s2_index = null;
@@ -428,7 +426,6 @@ function(poly2tri) {
         i11 = -1;
       }
     }
-    console.log("Resulting number of polygons: " + triangles.length);
     return triangles;
   }
 
