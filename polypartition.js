@@ -49,7 +49,13 @@ function(poly2tri) {
   // Given another point, returns the distance to that point.
   Point.prototype.dist = function(p) {
     var diff = this.sub(p);
-    return Math.sqrt(diff.dot(diff))
+    return Math.sqrt(diff.dot(diff));
+  }
+
+  // Given another point, returns the squared distance to that point.
+  Point.prototype.dist2 = function(p) {
+    var diff = this.sub(p);
+    return diff.dot(diff);
   }
 
   Point.prototype.len = function() {
