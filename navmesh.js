@@ -6,8 +6,8 @@ requirejs.config({
   }
 });
 
-define(['./polypartition', './priority-queue', './clipper'],
-function(  pp,                PriorityQueue,      ClipperLib) {
+define(['./polypartition', './priority-queue', './clipper', './worker!./aStarWorker.js', 'bragi'],
+function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,               Logger) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
@@ -23,6 +23,29 @@ function(  pp,                PriorityQueue,      ClipperLib) {
   //   var path = navmesh.calculatePath(currentlocation, targetLocation);
   var NavMesh = function(polys) {
     if (typeof polys == 'undefined') { return; }
+    this.initialized = false;
+
+    if (aStarWorker) {
+      this.workerInitialized = false;
+      Logger.log("navmesh", "Using worker.");
+      this.worker = aStarWorker;
+      this.worker.onmessage = function(message) {
+        var data = message.data;
+        var name = data[0];
+        if (name !== "log")
+          Logger.log("navmesh:debug", "Message received from worker: ", data);
+          
+        if (name == "log") {
+          this._workerLogger(data.slice(1));
+        } else if (name == "init") {
+          this.workerInitialized = data[1];
+          this._workerInit();
+        }
+      }.bind(this);
+    } else {
+      Logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
+      this.worker = false;
+    }
     this.init(polys);
   };
 
@@ -45,6 +68,7 @@ function(  pp,                PriorityQueue,      ClipperLib) {
 
     // Keep track of original polygons, generate their edges in advance.
     polys.unshift(outline);
+
     this.original_polys = polys;
     this.obstacle_edges = [];
     this.original_polys.forEach(function(poly) {
@@ -52,12 +76,13 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
       }
     }, this);
+    this.initialized = true;
   }
 
   // Returns a path from the source point to the target point. Path has the form
   // of points representing the center of each of the polygons required to get
   // to the target from the source.
-  NavMesh.prototype.calculatePath = function(source, target) {
+  NavMesh.prototype.calculatePath = function(source, target, callback) {
     var sourcePoly, targetPoly;
     var path = [];
     sourcePoly = this.findPolyForPoint(source);
@@ -66,14 +91,25 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     // Already in the same polygon as the target.
     if (sourcePoly == targetPoly) {
       path.push(target);
-      return path;
+      callback(path);
+      return;
     }
 
-    path = this._aStar(source, target, this.polys);
-    if (typeof path == 'undefined') return;
-    path.push(target);
-    // Remove first entry, which is current position.
-    return path.slice(1);
+    Logger.log("navmesh", "Calculating path.");
+    // Use web worker if present.
+    if (this.worker && this.workerInitialized) {
+      Logger.log("navmesh", "Using worker to calculate path.");
+      this.worker.postMessage(["aStar", source, target]);
+      // Set callback so it is accessible when results are sent back.
+      this.lastCallback = callback;
+    } else {
+      path = this._aStar(source, target, this.polys);
+      if (typeof path !== 'undefined') {
+        // Remove first entry, which is current position, and add target.
+        path = path.slice(1);
+      }
+      callback(path);
+    }
   }
 
   // Given a point, return the polygon that contains it, if any.
@@ -213,16 +249,31 @@ function(  pp,                PriorityQueue,      ClipperLib) {
         current = current.parent;
       }
       path.unshift(current.point);
+      // Add end point to path.
+      path.push(target);
       return path;
     } else {
       return;
     }
   }
 
-  // private
-  // Given an array of Poly objects, find all neighboring polygons for
-  // each polygon. Return value is an object with Poly keys and an array
-  // of Poly objects as values, representing the neighboring polygons.
+  /**
+   * Holds the "neighbor" relationship of Poly objects in the partition
+   * using the Poly's themselves as keys, and an array of Poly's as
+   * values, where the Polys in the array are neighbors of the Poly
+   * that was the key.
+   * @typedef AdjacencyGrid
+   * @type {Object.<Poly, Array<Poly>>}
+   */
+
+  /**
+   * Given an array of Poly objects, find all neighboring polygons for
+   * each polygon.
+   * @private
+   * @param {Array.<Poly>} polys - The array of polys to find neighbors
+   *   for.
+   * @return {AdjacencyGrid} - The "neighbor" relationships.
+   */
   NavMesh.prototype._generateAdjacencyGrid = function(polys) {
     var neighbors = new WeakMap();
     polys.forEach(function(poly, polyI, polys) {
@@ -537,6 +588,46 @@ function(  pp,                PriorityQueue,      ClipperLib) {
     shape.push({X: bounds.minX, Y: bounds.minY});
     shape.push({X: bounds.maxX, Y: bounds.minY});
     return shape;
+  }
+
+  // First element of message array should be the group to log the
+  // message to.
+  NavMesh.prototype._workerLogger = function(message) {
+    //var group = message.shift();
+    Logger.log.apply(null, message);
+  }
+
+  NavMesh.prototype._workerInit = function() {
+    if (this.initialized && this.worker && this.workerInitialized) {
+      this.worker.postMessage(["polys", this.polys]);
+    }
+
+    /**
+     * Set up listeners for web worker messages.
+     * Messages can have type "log" and "result".
+     */
+    this.worker.onmessage = function(message) {
+      var data = message.data;
+      var name = data[0];
+      var content = data[1];
+      // Omit log messages from worker in debug message.
+      if (name !== "log")
+        Logger.log("navmesh:debug", "Message received from worker:", data);
+
+      if (name == "log") {
+        this._workerLogger(data.slice(1));
+      } else if (name == "result") {
+        var path = content.map(function(location) {
+          return new Point(location.x, location.y);
+        });
+
+        if (typeof path !== "undefined") {
+          // Remove first entry, which is current position.
+          path = path.slice(1);
+        }
+        this.lastCallback(path);
+      }
+    }.bind(this)
   }
 
   return NavMesh;
