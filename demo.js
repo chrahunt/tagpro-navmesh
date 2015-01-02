@@ -137,8 +137,12 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   // Initialize canvas.
 
   // Set random start and end for pathfinding demo.
-  var startPoint = parts[0].centroid();
-  var endPoint = parts[25].centroid();
+  if (parts.length > 0) {
+    var startIndex = Math.floor(Math.random() * parts.length);
+    var endIndex = Math.floor(Math.random() * parts.length);
+    var startPoint = parts[startIndex].centroid();
+    var endPoint = parts[endIndex].centroid();
+  }
 
   getPathAndDrawUpdate(startPoint, endPoint);
 
