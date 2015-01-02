@@ -3,6 +3,11 @@ requirejs.config({
     'clipper': {
       exports: 'ClipperLib'
     }
+  },
+  map: {
+    '*': {
+      'bragi': 'bragi-browser'
+    }
   }
 });
 
@@ -105,10 +110,12 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     var c2d = canvas.getContext('2d');
     c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
     drawOutline(parts, canvas);
-    path = navmesh.calculatePath(startPoint, endPoint);
-    drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
-    drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
-    drawPath(path, canvas);
+    navmesh.calculatePath(startPoint, endPoint, function(path) {
+      drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
+      drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
+      path.unshift(startPoint);
+      drawPath(path, canvas);
+    });
   }
 
   var tiles = tile_grids["SuperDuperStamp"];
