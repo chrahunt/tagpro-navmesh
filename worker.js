@@ -18,22 +18,28 @@ define(function (text, ko) {
           // SecurityException if cross-domain request
           if (e.name == "SecurityError") {
             console.log("Security Error!");
-            var request = new XMLHttpRequest();
-            request.open('GET', url, false);
-            request.send(null);
-            if (request.status === 200) {
-              var blob = new Blob(
-                [request.responseText],
-                {type: 'application/javascript'}
-              );
-              try {
-                var worker = new Worker(URL.createObjectURL(blob));
-                onLoad(worker);
-              } catch (e) {
-                // SytaxError exception.
+
+            try {
+              var request = new XMLHttpRequest();
+              request.open('GET', url, false);
+              request.send(null);
+              if (request.status === 200) {
+                var blob = new Blob(
+                  [request.responseText],
+                  {type: 'application/javascript'}
+                );
+                try {
+                  var worker = new Worker(URL.createObjectURL(blob));
+                  onLoad(worker);
+                } catch (e) {
+                  // SytaxError exception.
+                  onLoad(false);
+                }
+              } else {
                 onLoad(false);
               }
-            } else {
+            } catch (e) {
+              // NetworkError if loaded from file://
               onLoad(false);
             }
           }

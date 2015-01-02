@@ -220,6 +220,8 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
       }
       // This may be undefined if there was no polygon found.
       var neighbors = this.grid.get(node.poly);
+      if (typeof neighbors == "undefined") continue;
+
       for (var i = 0; i < neighbors.length; i++) {
         var elt = neighbors[i];
         var neighborFound = discoveredPolys.has(elt.poly);

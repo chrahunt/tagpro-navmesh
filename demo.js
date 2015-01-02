@@ -3,6 +3,11 @@ requirejs.config({
     'clipper': {
       exports: 'ClipperLib'
     }
+  },
+  map: {
+    '*': {
+      'bragi': 'bragi-browser'
+    }
   }
 });
 
@@ -105,10 +110,12 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     var c2d = canvas.getContext('2d');
     c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
     drawOutline(parts, canvas);
-    path = navmesh.calculatePath(startPoint, endPoint);
-    drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
-    drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
-    drawPath(path, canvas);
+    navmesh.calculatePath(startPoint, endPoint, function(path) {
+      drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
+      drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
+      path.unshift(startPoint);
+      drawPath(path, canvas);
+    });
   }
 
   var tiles = tile_grids["SuperDuperStamp"];
@@ -130,8 +137,17 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   // Initialize canvas.
 
   // Set random start and end for pathfinding demo.
+<<<<<<< HEAD
   var startPoint = parts[0].centroid();
   var endPoint = parts[25].centroid();
+=======
+  if (parts.length > 0) {
+    var startIndex = Math.floor(Math.random() * parts.length);
+    var endIndex = Math.floor(Math.random() * parts.length);
+    var startPoint = parts[startIndex].centroid();
+    var endPoint = parts[endIndex].centroid();
+  }
+>>>>>>> 7bf3dcbbd3a2a4ff63456fad2e9ce73a47e397f9
 
   getPathAndDrawUpdate(startPoint, endPoint);
 
