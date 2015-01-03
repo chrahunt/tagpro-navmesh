@@ -16,6 +16,8 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  PolyUtils = pp.PolyUtils;
+
   // Drawing functions.
   // Takes in an array of x, y objects
   function drawShape(shapeInfo, canvas) {
@@ -110,9 +112,10 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     var c2d = canvas.getContext('2d');
     c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
     drawOutline(parts, canvas);
+
     navmesh.calculatePath(startPoint, endPoint, function(path) {
-      drawPoly(navmesh.findPolyForPoint(endPoint), canvas, 'red');
-      drawPoly(navmesh.findPolyForPoint(startPoint), canvas, 'pink');
+      drawPoly(PolyUtils.findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
+      drawPoly(PolyUtils.findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
       path.unshift(startPoint);
       drawPath(path, canvas);
     });
@@ -137,17 +140,12 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   // Initialize canvas.
 
   // Set random start and end for pathfinding demo.
-<<<<<<< HEAD
-  var startPoint = parts[0].centroid();
-  var endPoint = parts[25].centroid();
-=======
   if (parts.length > 0) {
     var startIndex = Math.floor(Math.random() * parts.length);
     var endIndex = Math.floor(Math.random() * parts.length);
     var startPoint = parts[startIndex].centroid();
     var endPoint = parts[endIndex].centroid();
   }
->>>>>>> 7bf3dcbbd3a2a4ff63456fad2e9ce73a47e397f9
 
   getPathAndDrawUpdate(startPoint, endPoint);
 
@@ -155,7 +153,7 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
   document.getElementById('c').addEventListener('click', function(evt) {
     var p = getCanvasPointClicked(evt, this);
     var shift = evt.shiftKey;
-    var poly = navmesh.findPolyForPoint(p);
+    var poly = PolyUtils.findPolyForPoint(p, navmesh.polys);
     if (poly) {
       if (shift) {
         endPoint = p;

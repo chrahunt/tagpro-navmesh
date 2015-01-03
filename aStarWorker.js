@@ -15,6 +15,7 @@ require({
 function(  PriorityQueue,      pp) {
   var Point = pp.Point;
   var Poly = pp.Poly;
+  var PolyUtils = pp.PolyUtils;
 
   /**
    * Object with utility methods for converting objects from serialized
@@ -60,17 +61,6 @@ function(  PriorityQueue,      pp) {
     return poly;
   }
 
-  // Utility function for aStar.
-  function findPolyForPoint(p) {
-    var i, poly;
-    for (i in self.polys) {
-      poly = self.polys[i];
-      if (poly.containsPoint(p)) {
-        return poly;
-      }
-    }
-  }
-
   // Copied from NavMesh.prototype.aStar.
   function aStar(source, target) {
     // Compares the value of two nodes.
@@ -93,14 +83,14 @@ function(  PriorityQueue,      pp) {
       return euclideanDistance(p, target);
     }
 
-    var sourcePoly = findPolyForPoint(source);
+    var sourcePoly = PolyUtils.findPolyForPoint(source, self.polys);
     // We're outside of the mesh somehow. Try a few nearby points.
     if (typeof sourcePoly == 'undefined') {
       var offsetSource = [new Point(5, 0), new Point(-5, 0), new Point(0, -5), new Point(0, 5)];
       for (var i = 0; i < offsetSource.length; i++) {
         // Make new point.
         var point = source.add(offsetSource[i]);
-        sourcePoly = findPolyForPoint(point);
+        sourcePoly = PolyUtils.findPolyForPoint(point, self.polys);
         if (!(typeof sourcePoly == 'undefined')) {
           source = point;
           break;
@@ -110,7 +100,7 @@ function(  PriorityQueue,      pp) {
         return;
       }
     }
-    var targetPoly = findPolyForPoint(target);
+    var targetPoly = PolyUtils.findPolyForPoint(target, self.polys);
 
     // Warning, may have compatibility issues.
     var discoveredPolys = new WeakSet();

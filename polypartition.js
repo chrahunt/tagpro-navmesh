@@ -15,7 +15,15 @@ function(poly2tri) {
     return new Point(this.x + p.x, this.y + p.y);
   }
 
+  /**
+   * Takes a point or scalar and subtracts slotwise in the case of
+   * another point or from each parameter in the case of a scalar.
+   * @param {(Point|number)} - The Point, or scalar, to subtract from
+   *   this point.
+   */
   Point.prototype.sub = function(p) {
+    if (typeof p == "number")
+      return new Point(this.x - p, this.y - p);
     return new Point(this.x - p.x, this.y - p.y);
   }
 
@@ -232,8 +240,15 @@ function(poly2tri) {
     return "" + center.x + " " + center.y;
   }
 
-  // Adapted from http://stackoverflow.com/a/8721483
-  Poly.prototype.containsPoint3 = function(p) {
+  /**
+   * Checks if the given point is contained within the Polygon.
+   * Adapted from http://stackoverflow.com/a/8721483
+   *
+   * @param {Point} p - The point to check.
+   * @return {boolean} - Whether or not the point is contained within
+   *   the polygon.
+   */
+  Poly.prototype.containsPoint = function(p) {
     var result = false;
     for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
       var p1 = this.points[j], p2 = this.points[i];
@@ -243,37 +258,6 @@ function(poly2tri) {
       }
     }
     return result;
-  }
-
-  Poly.prototype.containsPoint2 = function(p) {
-    for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
-      var p1 = this.points[j], p2 = this.points[i];
-      if (PolyUtils.isConvex(p1, p, p2)) return false;
-    }
-    return true;
-  }
-
-  // Only works when the polygon is convex.
-  // Adapted from http://stackoverflow.com/a/1119673
-  Poly.prototype.containsPoint = function(p) {
-    var previous_side = "none";
-    var i, p1, p2, affine_segment, affine_point, prod, current_side;
-    for (var i = 0, j = this.numpoints - 1; i < this.numpoints; j = i++) {
-      p1 = this.points[j], p2 = this.points[i];
-      affine_segment = p2.sub(p1);
-      affine_point = p.sub(p1);
-      // Get side of point relative to segment.
-      prod = affine_segment.cross(affine_point);
-      if (prod < 0) current_side = "left";
-      else if (prod > 0) current_side = "right";
-      else current_side = "none";
-
-      // Actions based on results.
-      if (current_side == "none") return false;
-      else if (previous_side == "none") previous_side = current_side;
-      else if (previous_side !== current_side) return false;
-    }
-    return true;
   }
 
   PVertex = function() {
@@ -441,6 +425,25 @@ function(poly2tri) {
     var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
     return (tmp > 0);
   }
+
+  /**
+   * Given an array of polygons, returns the one that contains the point.
+   * If no polygon is found, null is returned.
+   * @param {Point} p - The point to find the polygon for.
+   * @param {Array.<Poly>} polys - The polygons to search for the point.
+   * @return {?Polygon} - The polygon containing the point.
+   */
+  PolyUtils.findPolyForPoint = function(p, polys) {
+    var i, poly;
+    for (i in polys) {
+      poly = polys[i];
+      if (poly.containsPoint(p)) {
+        return poly;
+      }
+    }
+    return null;
+  }
+  exports.PolyUtils = PolyUtils;
 
   return exports;
 });
