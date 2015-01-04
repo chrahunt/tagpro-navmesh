@@ -11,7 +11,15 @@ function(poly2tri) {
   }
   exports.Point = Point;
 
+  /**
+   * Takes a point or scalar and adds slotwise in the case of another
+   * point, or to each parameter in the case of a scalar.
+   * @param {(Point|number)} - The Point, or scalar, to add to this
+   *   point.
+   */
   Point.prototype.add = function(p) {
+    if (typeof p == "number")
+      return new Point(this.x + p, this.x + p);
     return new Point(this.x + p.x, this.y + p.y);
   }
 
