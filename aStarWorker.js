@@ -228,7 +228,7 @@ function(  PriorityQueue,      pp) {
   onmessage = function(e) {
     var data = e.data;
     var name = data[0];
-    Logger.log("worker", "Message received to worker:", data);
+    Logger.log("worker:debug", "Message received to worker:", data);
     if (name == "polys") {
       // Polygons defining map.
       self.polys = data[1].map(Convert.toPoly);

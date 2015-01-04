@@ -1,13 +1,80 @@
-define(['./action-values'],
-function(   ActionValues) {
-  // Utilities for generating usable map representations from map tiles.
-  var mapParser = function() {}
+/**
+ * @module map/parse
+ */
+define(['./action-values', './polypartition'],
+function(   ActionValues,   pp) {
+  var Point = pp.Point;
+  var Poly = pp.Poly;
 
-  // Takes in a tile grid and returns an array of shapes representing the
-  // grid. A shape is an array of vertices. A vertex is an objects with
-  // x and y properties corresponding to the location of the vertex.
-  mapParser.parse = function(tiles) {
-    // Returns 1 if a cell is a 'bad' cell (tile or otherwise to be avoided), 0 otherwise.
+  // Utilities for generating usable map representations from map tiles.
+  var MapParser = function() {}
+
+  /**
+   * An object with x and y properties that represents a coordinate pair.
+   * @typedef MPPoint
+   * @type {object}
+   * @property {number} x - The x coordinate of the location.
+   * @property {number} y - The y coordinate of the location.
+   */
+
+  /**
+   * A Shape is an array of points, where points are objects with x and y properties which represent coordinates on the map.
+   * @typedef MPShape
+   * @type {Array.<MPPoint>}
+   */
+
+  /**
+   * An object with r and c properties that represents a row/column
+   * location in a 2d array.
+   * @typedef ArrayLoc
+   * @type {object}
+   * @property {integer} r - The row number of the array location.
+   * @property {integer} c - The column number of the array location.
+   */
+
+  /**
+   * The 2d tile grid from `tagpro.map`, or a similar 2d grid resulting
+   * from an operation on the original.
+   * @typedef MapTiles
+   * @type {Array.<Array.<number>>}
+   */
+
+  /**
+   * A Cell is just an array that holds the values of the four adjacent
+   * cells in a 2d array, recorded in CCW order starting from the upper-
+   * left quadrant. For example, given a 2d array:
+   * [[1, 0, 1],
+   *  [1, 0, 0],
+   *  [1, 1, 1]]
+   * we would generate the representation using the cells:
+   * [1, 0,  [0, 1,  [1, 0,  [0, 0  
+   *  1, 0]   0, 0]   1, 1]   1, 1].
+   * These correspond to the parts of a tile that would be covered if
+   * placed at the intersection of 4 tiles. The value 0 represents a
+   * blank location, 1 indicates that the quadrant is covered.
+   * To represent how such tiles would be covered in the case of diagonal
+   * tiles, we use 2 to indicate that the lower diagonal of a quadrant is
+   * filled, and 3 to indicate that the upper diagonal of a quadrant is
+   * filled. The tiles available force the diagonals of each quadrant to
+   * point to the center, so this is sufficient for describing all
+   * possible overlappings.
+   * @typedef Cell
+   * @type {Array.<number>}
+   */
+
+  /**
+   * Converts the 2d array defining a TagPro map into shapes.
+   * @param {MapTiles} tiles - The tiles as retrieved from `tagpro.map`.
+   * @return {Array.<MPShape>} - The result of converting the map into polygons.
+   */
+  MapParser.parse = function(tiles) {
+    /**
+     * Returns 1 if a tile value is one that we want to consider as
+     * a wall (we consider empty space to be a wall), or the tile value
+     * itself for diagonal walls. 0 is returned otherwise.
+     * @param {number} elt - The tile value at a row/column location
+     * @return {number} - The number to insert in place of the tile value.
+     */
     function isBadCell(elt) {
       var bad_cells = [0, 1, 1.1, 1.2, 1.3, 1.4];
       if(bad_cells.indexOf(elt) !== -1) {
@@ -24,14 +91,33 @@ function(   ActionValues) {
       }
     }
 
-    // Takes a 2D array and returns an array of arrays resulting from applying fn to
-    // each value in each sub-array.
+    /**
+     * Callback that receives each of the elements in the 2d map function.
+     * @callback mapCallback
+     * @param {*} - The element from the 2d array.
+     * @return {*} - The transformed element.
+     */
+
+    /**
+     * Applies `fn` to every individual element of the 2d array `arr`.
+     * @param {Array.<Array.<*>>} arr - The 2d array to use.
+     * @param {mapCallback} fn - The function to apply to each element.
+     * @return {Array.<Array.<*>>} - The 2d array after the function
+     *   has been applied to each element.
+     */
     function map2d(arr, fn) {
       return arr.map(function(row) {
         return row.map(fn);
       });
     }
 
+    /**
+     * Pre-processes the map to remove external diagonal tiles. This
+     * side-steps an issue where the system is unable to parse maps
+     * that have diagonal tiles on the outside of the map outline.
+     * @param {Array.<Array.<Cell>>} arr - The 2d array output of 
+     * @return {Array.<Array.<Cell>>} - The
+     */
     function preprocess(arr) {
       function identifier(cell) {
         var str = cell[0] + "-" + cell[1] + "-" + cell[2] + "-" + cell[3];
@@ -57,24 +143,11 @@ function(   ActionValues) {
       return arr;
     }
 
-    /*
-     * Given a rectangular 2D array, returns a 2D array with dimensions one
-     * less in each direction where each cell is composed of the values of
-     * the four surrounding it in the original array, given as an array of
-     * values in CCW order starting from the upper left quadrant. e.g. given
-     * [[1, 0, 1],
-     *  [1, 0, 0],
-     *  [1, 1, 1]]
-     * the tiles
-     * [1, 0,  [0, 1,  [1, 0,  [0, 0  
-     *  1, 0]   0, 0]   1, 1]   1, 1]
-     * would be generated.
-     * Things get more complicated to accommodate representing diagonal tiles.
-     * Within a contour tile (a tile in the resulting contour grid) the following
-     * values in a quadrant of the tile hold the meaning specified:
-     *   2 - the lower diagonal of that quadrant is filled
-     *   3 - the upper diagonal of that quadrant is filled
-     * #todo: elaborate further if needed.
+    /**
+     * Converts the provided array into its equivalent representation
+     * using cells.
+     * @param {MapTiles} arr - 
+     * @param {Array.<Array.<Cell>>} - The converted array.
      */
     function generateContourGrid(arr) {
       // Generate grid for holding values.
@@ -122,10 +195,23 @@ function(   ActionValues) {
       return ActionValues[str];
     }
 
-    // Returns the location of obj in arr with equality determined by cmp.
-    // If no element is found then this returns -1.
-    // cmp should be a function that takes two elements and returns true
-    // if they are equal, false otherwise.
+    /**
+     * Callback function for testing equality of items.
+     * @callback comparisonCallback
+     * @param {*} - The first item.
+     * @param {*} - The second item.
+     * @return {boolean} - Whether or not the items are equal.
+     */
+
+    /**
+     * Returns the location of obj in arr with equality determined by cmp.
+     * @param {Array.<*>} arr - The array to be searched.
+     * @param {*} obj - The item to find a match for.
+     * @param {comparisonCallback} cmp - The callback that defines
+     *   whether `obj` matches.
+     * @return {integer} - The index of the first element to match `obj`,
+     *   or -1 if no such element was located.
+     */
     function find(arr, obj, cmp) {
       if (typeof cmp !== 'undefined') {
         for (var i = 0; i < arr.length; i++) {
@@ -137,7 +223,14 @@ function(   ActionValues) {
       }
     }
 
-    // Compare two array locations.
+    /**
+     * Compare two objects defining row/col locations in an array
+     * and return true if they represent the same row/col location.
+     * @param {ArrayLoc} elt1
+     * @param {ArrayLoc} elt2
+     * @return {boolean} - Whether or not these two array locations
+     *   represent the same row/column.
+     */
     function eltCompare(elt1, elt2) {
       return (elt1.c == elt2.c && elt1.r == elt2.r);
     }
@@ -335,8 +428,14 @@ function(   ActionValues) {
       ];
     }
 
-    // Returns an array of the row/column locations of the spikes in
-    // the map, replacing them with floor tiles in the original array.
+    /**
+     * Returns an array of the array locations of the spikes contained
+     * in the map tiles, replacing those array locations in the original
+     * map tiles with 2, which corresponds to a floor tile.
+     * @param {Array.<Array.<number>>} tiles - The map tiles.
+     * @return {Array.<ArrayLoc>} - The array of locations that held
+     *   spike tiles.
+     */
     function extractSpikes(tiles) {
       var spike_locations = [];
       tiles.forEach(function(row, row_n) {
@@ -350,9 +449,11 @@ function(   ActionValues) {
       return spike_locations;
     }
 
-    // Bring everything together.
+    /**
+     * Converts the tagpro.map tiles into shapes.
+     */
     function doParse(tiles) {
-      // Make copy of tiles to preserve original.
+      // Make copy of tiles to preserve original array
       tiles = JSON.parse(JSON.stringify(tiles));
 
       // Returns a list of the spike locations and removes them from
@@ -404,18 +505,33 @@ function(   ActionValues) {
     return doParse(tiles);
   }
 
-  // Convert arrays of points as returned by mapParser.parse into Polys.
-  mapParser.convertShapesToPolys = function(shapes) {
+  /**
+   * Convert shapes into polys.
+   * @param {Array.<Shape>} shapes - The shapes to be converted.
+   * @return {Array.<Poly>} - The converted shapes.
+   */
+  MapParser.convertShapesToPolys = function(shapes) {
     var polys = shapes.map(function(shape) {
-      var poly = new Poly();
-      poly.init(shape.length);
-      for (var i = 0; i < shape.length; i++) {
-        var point = new Point(shape[i].x, shape[i].y);
-        poly.setPoint(i, point);
-      }
-      return poly;
+      return MapParser.convertShapeToPoly(shape);
     });
     return polys;
   }
-  return mapParser;
+
+  
+  /**
+   * Convert a shape into a Poly.
+   * @param {MPShape} shape - The shape to convert.
+   * @return {Poly} - The converted shape.
+   */
+  MapParser.convertShapeToPoly = function(shape) {
+    var poly = new Poly();
+    poly.init(shape.length);
+    for (var i = 0; i < shape.length; i++) {
+      var point = new Point(shape[i].x, shape[i].y);
+      poly.setPoint(i, point);
+    }
+    return poly;
+  }
+
+  return MapParser;
 });
