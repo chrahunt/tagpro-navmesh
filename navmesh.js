@@ -66,17 +66,19 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
     this._separatePolys(polys);
 
     // Offset polys from side so they represent traversable area.
-    polys = this._offsetPolys(polys);
+    var areas = this._offsetPolys(polys);
 
-    // Determine polygon that should be used as the outline.
-    var outline_i = this._getLargestPoly(polys);
-    var outline = polys.splice(outline_i, 1)[0];
+    this.polys = [];
+    areas.forEach(function(area) {
+      var outline = area.polygon;
+      var holes = area.holes;
+      var polys = this._generatePartition(outline, holes);
+      Array.prototype.push.apply(this.polys, polys);
+    }, this);
 
-    this.polys = this._generatePartition(outline, polys);
     this.grid = this._generateAdjacencyGrid(this.polys);
 
     // Keep track of original polygons, generate their edges in advance.
-    polys.unshift(outline);
 
     this.original_polys = polys;
     this.obstacle_edges = [];
@@ -411,6 +413,15 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
   }
 
   /**
+   * Represents the outline of a shape along with its holes.
+   * @typedef MapArea
+   * @type {object}
+   * @property {Poly} polygon - The polygon defining the exterior of
+   *   the shape.
+   * @property {Array.<Poly>} holes - The holes of the shape.
+   */
+
+  /**
    * Offset the polygons such that there is a `offset` unit buffer
    * between the sides of the outline and around the obstacles. This
    * buffer makes it so that the mesh truly represents the movable area
@@ -421,6 +432,8 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
    * @param {Array.<Poly>} polys - The polygons to offset.
    * @param {number} [offset=16] - The amount to offset the polygons
    *   from the movable areas.
+   * @return {Array.<MapArea>} - The shapes defining the polygons after
+   *   offsetting and merging.
    */
   NavMesh.prototype._offsetPolys = function(polys, offset) {
     function find(arr, obj, cmp) {
@@ -469,54 +482,70 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
     // ~= ball radius / 2
     if (typeof offset == 'undefined') offset = 16;
     var indices = [];
-    // For the moment assumes that there is only 1 'outline'.
-    var outline = polys.filter(function(poly, index) {
+    // Separate CW and CCW shapes. The CCW shapes correspond to the
+    // interior wall outlines of out map, the CW shapes are obstacles.
+    var outlines = [];
+    polys = polys.filter(function(poly, index) {
       if (poly.getOrientation() == "CCW") {
-        indices.push(index);
-        return true;
+        outlines.push(poly);
+        return false;
       }
-      return false;
+      return true;
     });
-    var outline_i = indices[0];
-    outline = outline[0];
-    polys.splice(outline_i, 1);
 
-
-    // Handle outline.
-    // First, create a shape with the outline as the interior.
     var scale = 100;
-    var cOutline = this._convertPolyToClipper(outline);
-    var boundingShape = this._getBoundingShape(outline);
-    var cpr = new ClipperLib.Clipper();
-    ClipperLib.JS.ScaleUpPaths([cOutline, boundingShape], scale);
-    cpr.AddPath(boundingShape, ClipperLib.PolyType.ptSubject, true);
-    cpr.AddPath(cOutline, ClipperLib.PolyType.ptClip, true);
 
+    var cpr = new ClipperLib.Clipper();
+    var co = new ClipperLib.ClipperOffset();
     var subject_fillType = ClipperLib.PolyFillType.pftNonZero;
     var clip_fillType = ClipperLib.PolyFillType.pftNonZero;
+    
+    // Handle outlines.
+    var offsetted_outlines = [];
+    outlines.forEach(function(outline) {
+      // First, create a shape with the outline as the interior.
+      var cOutline = this._convertPolyToClipper(outline);
+      var boundingShape = this._getBoundingShape(outline);
+      ClipperLib.JS.ScaleUpPaths([cOutline, boundingShape], scale);
+      cpr.Clear();
+      cpr.AddPath(boundingShape, ClipperLib.PolyType.ptSubject, true);
+      cpr.AddPath(cOutline, ClipperLib.PolyType.ptClip, true);
 
-    var solution_paths = new ClipperLib.Paths();
-    cpr.Execute(ClipperLib.ClipType.ctDifference, solution_paths, subject_fillType, clip_fillType);
+      var solution_paths = new ClipperLib.Paths();
+      cpr.Execute(ClipperLib.ClipType.ctDifference, solution_paths, subject_fillType, clip_fillType);
 
-    // Once we have the shape as created above, inflate it. This works better than treating the outline
-    // as the exterior of a shape and deflating it.
-    var co = new ClipperLib.ClipperOffset();
-    co.AddPaths(solution_paths, true);
-    var offsetted_paths = new ClipperLib.Paths();
+      // Once we have the shape as created above, inflate it. This gives
+      // better results than treating the outline as the exterior of a
+      // shape and deflating it.
+      co.AddPaths(solution_paths, true);
+      var offsetted_paths = new ClipperLib.Paths();
 
-    co.Clear();
-    co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
-    co.MiterLimit = 2;
-    co.arcTolerance = 0.25;
-    co.Execute(offsetted_paths, offset * scale);
+      co.Clear();
+      co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
+      co.MiterLimit = 2;
+      co.arcTolerance = 0.25;
+      co.Execute(offsetted_paths, offset * scale);
 
-    // Get only the path defining the outline we were interested in, discarding the exterior bounding
-    // shape.
-    var offsetted_outline = offsetted_paths[1];
+      // If this is not true then the offsetting process shrank the
+      // outline into non-existence and only the bounding shape is
+      // left.
+      // >= 2 in case the offsetting process isolates portions of the
+      // outline (see: GamePad).
+      if (offsetted_paths.length >= 2) {
+        // Get only the paths defining the outlines we were interested
+        // in, discarding the exterior bounding shape.
+        offsetted_paths.shift();
+
+        // Reverse paths since from here on we're going to treat the
+        // outlines as the exterior of a shape.
+        offsetted_paths.forEach(function(path) {
+          path.reverse();
+        });
+        Array.prototype.push.apply(offsetted_outlines, offsetted_paths);
+      }
+    }, this);
 
     // Here we are going to inflate the holes.
-    co.Clear();
-
     var hole_shapes = new Array();
     polys.forEach(function(poly) {
       poly.setOrientation("CCW");
@@ -525,40 +554,62 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
 
     ClipperLib.JS.ScaleUpPaths(hole_shapes, scale);
 
+    co.Clear();
     // Inflate holes.
     var offsetted_holes = new ClipperLib.Paths();
     co.AddPaths(hole_shapes, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
     co.Execute(offsetted_holes, offset * scale);
 
     // Merge everything together.
-    // Copy and change orientation of all holes.
     var offsetted_shapes = copy(offsetted_holes);
-    /*offsetted_shapes.forEach(function(shape) {
-      shape.reverse();
-    });*/
-    //offsetted_shapes.push(offsetted_outline);
 
     cpr.Clear();
-    cpr.AddPath(offsetted_outline, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(offsetted_outlines, ClipperLib.PolyType.ptSubject, true);
     cpr.AddPaths(offsetted_shapes, ClipperLib.PolyType.ptClip, true);
 
-    var unioned_holes = new ClipperLib.Paths();
-    cpr.Execute(ClipperLib.ClipType.ctDifference, unioned_holes, subject_fillType, clip_fillType);
-    /*unioned_holes.forEach(function(u) {
-      if (find(offsetted_holes, u, shpCompare) !== -1) {
-        console.log("Found.");
-      } else {
-        console.log(u);
-      }
-    });*/
-    ClipperLib.JS.ScaleDownPaths(unioned_holes, scale);
+    var unioned_shapes_polytree = new ClipperLib.PolyTree();
+    cpr.Execute(ClipperLib.ClipType.ctDifference, unioned_shapes_polytree, subject_fillType, clip_fillType);
+
     polys = new Array();
-    unioned_holes.forEach(function(shape) {
-      polys.push(this._convertClipperToPoly(shape));
+
+    /**
+     * An area is a shape along with its holes, if any.
+     */
+    var areas = [];
+
+    var outer_polygons = unioned_shapes_polytree.Childs();
+
+    // Organize shapes into their outer polygons and holes.
+    for (var i = 0; i < outer_polygons.length; i++) {
+      var outer_polygon = outer_polygons[i];
+      var contour = outer_polygon.Contour();
+      ClipperLib.JS.ScaleDownPath(contour, scale);
+      var area = {
+        polygon: contour,
+        holes: []
+      }
+
+      outer_polygon.Childs().forEach(function(child) {
+        var contour = child.Contour();
+        ClipperLib.JS.ScaleDownPath(child.Contour(), scale);
+        // Add as a hole.
+        area.holes.push(contour);
+
+        // Add children as additional outer polygons.
+        child.Childs().forEach(function(child_outer) {
+          outer_polygons.push(child_outer);
+        });
+      });
+      areas.push(area);
+    }
+    
+    // Convert Clipper Paths to Polys.
+    areas.forEach(function(area) {
+      area.polygon = this._convertClipperToPoly(area.polygon);
+      area.holes = area.holes.map(this._convertClipperToPoly, this);
     }, this);
 
-    //polys.unshift(new_outline);
-    return polys;
+    return areas;
   }
 
   /**

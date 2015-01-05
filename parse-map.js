@@ -76,7 +76,7 @@ function(   ActionValues,   pp) {
      * @return {number} - The number to insert in place of the tile value.
      */
     function isBadCell(elt) {
-      var bad_cells = [0, 1, 1.1, 1.2, 1.3, 1.4];
+      var bad_cells = [1, 1.1, 1.2, 1.3, 1.4];
       if(bad_cells.indexOf(elt) !== -1) {
         // Ensure empty spaces get mapped to full tiles so outside of
         // map isn't traced.
@@ -384,9 +384,13 @@ function(   ActionValues,   pp) {
       return shapes;
     }
 
-    // Convert a row/column value to a coordinate pair representing the center
-    // of that value, assumes the row/column value is from the original tile
-    // grid.
+    /**
+     * Convert an array location to a point representing the top-left
+     * corner of the tile in global coordinates.
+     * @param {ArrayLoc} location - The array location to get the
+     *   coordinates for.
+     * @return {MPPoint} - The coordinates of the tile.
+     */
     function getCoordinates(location) {
       var tile_width = 40;
       var x = location.r * tile_width;// + (tile_width / 2);
@@ -432,7 +436,7 @@ function(   ActionValues,   pp) {
      * Returns an array of the array locations of the spikes contained
      * in the map tiles, replacing those array locations in the original
      * map tiles with 2, which corresponds to a floor tile.
-     * @param {Array.<Array.<number>>} tiles - The map tiles.
+     * @param {MapTiles} tiles - The map tiles.
      * @return {Array.<ArrayLoc>} - The array of locations that held
      *   spike tiles.
      */
@@ -460,26 +464,26 @@ function(   ActionValues,   pp) {
       // the tiles.
       var spike_locations = extractSpikes(tiles);
 
-      // Pad tiles with a single ring of empty space on all sides, to
-      // ensure interior of map is closed.
+      // Pad tiles with a ring of wall tiles, to ensure the map is
+      // closed.
       var empty_row = [];
       for (var i = 0; i < tiles[0].length + 2; i++) {
-        empty_row.push(0);
+        empty_row.push(1);
       }
       tiles.forEach(function(row) {
-        row.unshift(0);
-        row.push(0);
+        row.unshift(1);
+        row.push(1);
       });
       tiles.unshift(empty_row);
       tiles.push(empty_row.slice());
 
       // Actually doing the conversion.
-      // Get rid of all but wall/obstacle cells.
+      // Get rid of tile values except those for the walls.
       var threshold_tiles = map2d(tiles, isBadCell);
 
       // Preprocess tiles to get rid of diagonal tiles that cause problems
       // outside bounds of map.
-      var preprocessed_tiles = preprocess(threshold_tiles);
+      var preprocessed_tiles = threshold_tiles;//preprocess(threshold_tiles);
 
       // Generate contour grid, essentially a grid whose cells are at the
       // intersection of every set of 4 cells in the original map.
