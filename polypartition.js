@@ -19,7 +19,7 @@ function(poly2tri) {
    */
   Point.prototype.add = function(p) {
     if (typeof p == "number")
-      return new Point(this.x + p, this.x + p);
+      return new Point(this.x + p, this.y + p);
     return new Point(this.x + p.x, this.y + p.y);
   }
 
