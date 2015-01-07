@@ -15,8 +15,8 @@ requirejs.config({
  *   navmesh.calculatePath(currentlocation, targetLocation, callback);
  * @module navmesh
  */
-define(['./polypartition', './priority-queue', './clipper', './worker!./aStarWorker.js', 'bragi'],
-function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,               Logger) {
+define(['./polypartition', './pathfinder', './clipper', './worker!./aStarWorker.js', 'bragi'],
+function(  pp,                Pathfinder,     ClipperLib,  aStarWorker,               Logger) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Partition = pp.Partition;
@@ -77,7 +77,9 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
       Array.prototype.push.apply(this.polys, polys);
     }, this);
 
-    this.grid = this._generateAdjacencyGrid(this.polys);
+    if (!this.worker) {
+      this.pathfinder = new Pathfinder(this.polys);
+    }
 
     // Keep track of original polygons, generate their edges in advance.
     this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
@@ -106,19 +108,8 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
    *   when the path has been calculated.
    */
   NavMesh.prototype.calculatePath = function(source, target, callback) {
-    var sourcePoly, targetPoly;
-    var path = [];
-    sourcePoly = PolyUtils.findPolyForPoint(source, this.polys);
-    targetPoly = PolyUtils.findPolyForPoint(target, this.polys);
-    
-    // Already in the same polygon as the target.
-    if (sourcePoly == targetPoly) {
-      path.push(target);
-      callback(path);
-      return;
-    }
-
     Logger.log("navmesh:debug", "Calculating path.");
+
     // Use web worker if present.
     if (this.worker && this.workerInitialized) {
       Logger.log("navmesh:debug", "Using worker to calculate path.");
@@ -126,9 +117,9 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
       // Set callback so it is accessible when results are sent back.
       this.lastCallback = callback;
     } else {
-      path = this._aStar(source, target, this.polys);
+      path = this.pathfinder.aStar(source, target);
       if (typeof path !== 'undefined') {
-        // Remove first entry, which is current position, and add target.
+        // Remove first entry, which is current position.
         path = path.slice(1);
       }
       callback(path);
@@ -740,7 +731,7 @@ function(  pp,                PriorityQueue,      ClipperLib,  aStarWorker,     
       } else if (name == "result") {
         var path = data[1];
 
-        if (typeof path !== "undefined") {
+        if (path) {
           // Convert Path back to points.
           path = path.map(function(location) {
             return new Point(location.x, location.y);

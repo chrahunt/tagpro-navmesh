@@ -183,9 +183,13 @@ function(   ActionValues,   pp) {
     return (elt1.c == elt2.c && elt1.r == elt2.r);
   }
 
-  // Takes in the vertex/action information and returns an array of arrays,
-  // where each array corresponds to a shape and each element of the array is
-  // a vertex which is connected to it's previous and next neighbor (circular).
+  /**
+   * Takes in the vertex/action information and returns an array of arrays,
+   * where each array corresponds to a shape and each element of the array is
+   * a vertex which is connected to it's previous and next neighbor (circular).
+   * @param {} actionInfo
+   * @return {Array.<Array<ArrayLoc>>} - Array of vertex locations in 
+   */
   function generateShapes(actionInfo) {
     // Total number of cells.
     var total = actionInfo.length * actionInfo[0].length;
@@ -387,30 +391,34 @@ function(   ActionValues,   pp) {
    */
   function getCoordinates(location) {
     var tile_width = 40;
-    var x = location.r * tile_width;// + (tile_width / 2);
-    var y = location.c * tile_width;// + (tile_width / 2);
+    var x = location.r * tile_width;
+    var y = location.c * tile_width;
     return {x: x, y: y};
   }
 
-  // Takes in an array of shapes and converts from contour grid layout
-  // to actual coordinates.
+  /**
+   * Takes in an array of shapes and converts from contour grid layout
+   * to actual coordinates.
+   * @param {Array.<Array.<ArrayLoc>>} shapes - output from generateShapes
+   * @return {Array.<Array.<{{x: number, y: number}}>>}
+   */
   function convertShapesToCoords(shapes) {
     var tile_width = 40;
 
     var new_shapes = map2d(shapes, function(loc) {
       // It would be loc.r + 1 and loc.c + 1 but that has been removed
       // to account for the one-tile width of padding added in doParse.
-      var row = loc.r * tile_width - (tile_width / 2);
-      var col = loc.c * tile_width - (tile_width / 2);
+      var row = loc.r * tile_width;
+      var col = loc.c * tile_width;
       return {x: row, y: col}
     });
     return new_shapes;
   }
 
   // Given an x and y value, return a polygon (octagon) that approximates
-  // a spike centered at that x, y location. Points in CW order.
+  // a spike at the tile given by that x, y location. Points in CW order.
   function getSpikeShape(coord) {
-    var x = coord.x, y = coord.y;
+    var x = coord.x + 20, y = coord.y + 20;
     var spike_radius = 14;
     // almost = spike_radius * tan(pi/8) for the vertices of a regular octagon.
     var point_offset = 5.8;
