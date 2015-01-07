@@ -121,21 +121,20 @@ function( NavMesh,   mapParser,   pp,              tile_grids) {
     });
   }
 
-  var tiles = tile_grids["SuperDuperStamp"];
+  var tiles = tile_grids["Hurricane2"];
   // Get outline of walls in map.
-  var shapeArrays = mapParser.parse(tiles);
+  var parsedMap = mapParser.parse(tiles);
 
   // Convert and generate navmesh.
-  var polys = mapParser.convertShapesToPolys(shapeArrays);
   var navmesh = new NavMesh();
-  var outline = navmesh.init(polys);
+  var outline = navmesh.init(parsedMap);
   var canvas = initCanvasForTiles(tiles);
-  //drawPoly(outline, canvas);
-  //return;
+
+  // Get shapes defining navmesh
   var parts = navmesh.polys;
-  polys.forEach(function(poly) {
-    parts.push(poly);
-  });
+  // Add original walls and obstacles to shapes for display.
+  Array.prototype.push.apply(parts, parsedMap.walls);
+  Array.prototype.push.apply(parts, parsedMap.obstacles);
 
   // Initialize canvas.
 

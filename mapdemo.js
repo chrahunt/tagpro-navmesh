@@ -1,5 +1,5 @@
 require(['parse-map', 'polypartition', 'tile-grids'],
-function( mapParser,   pp,              tile_grids) {
+function( MapParser,   pp,              tile_grids) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
@@ -100,11 +100,9 @@ function( mapParser,   pp,              tile_grids) {
 
   var tiles = tile_grids["Volt"];
   // Get outline of walls in map.
-  var shapeArrays = mapParser.parse(tiles);
-
-  // Convert and generate navmesh.
-  var polys = mapParser.convertShapesToPolys(shapeArrays);
-
+  var parsed_map = MapParser.parse(tiles);
+  
+  var polys = parsed_map.walls.concat(parsed_map.obstacles);
   // Initialize canvas.
   var canvas = initCanvasForTiles(tiles);
 

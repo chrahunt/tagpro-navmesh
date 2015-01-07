@@ -448,9 +448,17 @@ function(   ActionValues,   pp) {
   }
 
   /**
+   * The returned value from the map parsing function.
+   * @typedef ParsedMap
+   * @type {object}
+   * @property {Array.<MPShape} walls - The parsed walls.
+   * @property {Array.<MPShape} obstacles - The parsed obstacles.
+   */
+
+  /**
    * Converts the 2d array defining a TagPro map into shapes.
    * @param {MapTiles} tiles - The tiles as retrieved from `tagpro.map`.
-   * @return {Array.<MPShape>} - The result of converting the map into polygons.
+   * @return {ParsedMap} - The result of converting the map into polygons.
    */
   MapParser.parse = function(tiles) {
     // Make copy of tiles to preserve original array
@@ -496,10 +504,14 @@ function(   ActionValues,   pp) {
     var converted_shapes = convertShapesToCoords(actual_shapes);
 
     // Get spike-approximating shapes and add to list.
-    spike_locations.forEach(function(spike) {
-      converted_shapes.push(getSpikeShape(getCoordinates(spike)));
+    var obstacles = spike_locations.map(function(spike) {
+      return getSpikeShape(getCoordinates(spike));
     });
-    return converted_shapes;
+
+    return {
+      walls: this.convertShapesToPolys(converted_shapes),
+      obstacles: this.convertShapesToPolys(obstacles)
+    };
   }
 
   /**
