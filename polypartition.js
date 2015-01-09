@@ -74,6 +74,14 @@ function(poly2tri) {
     return diff.dot(diff);
   }
 
+  /**
+   * Returns true if the point is (0, 0).
+   * @return {boolean} - Whether or not the point is (0, 0).
+   */
+  Point.prototype.zero = function() {
+    return this.x == 0 && this.y == 0;
+  }
+
   Point.prototype.len = function() {
     return this.dist(new Point(0, 0));
   }

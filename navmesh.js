@@ -82,12 +82,16 @@ function(  pp,                Pathfinder,     ClipperLib,  aStarWorker,         
     }
 
     // Keep track of original polygons, generate their edges in advance.
-    this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
+    //this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
     this.obstacle_edges = [];
-    this.original_polys.forEach(function(poly) {
-      for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
-        this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
-      }
+    //this.original_polys.forEach(function(poly) {
+    areas.forEach(function(area) {
+      var polys = [area.polygon].concat(area.holes);
+      polys.forEach(function(poly) {
+        for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
+          this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
+        }
+      }, this);
     }, this);
     this.initialized = true;
   }
