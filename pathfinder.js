@@ -20,7 +20,15 @@ function(   PriorityQueue,      pp) {
     this.grid = this.generateAdjacencyGrid(this.polys);
   }
 
-  // Copied from NavMesh.prototype.aStar.
+  /**
+   * Computes path from source to target, using sides and centers of the edges
+   * between adjacent polygons. source and target are Points and polys should
+   * be the final partitioned map.
+   * @param {Point} source - The start location for the search.
+   * @param {Point} target - The target location for the search.
+   * @return {?Array.<Point>} - A series of points representing the path from
+   *   the source to the target. If a path is not found, `null` is returned.
+   */
   Pathfinder.prototype.aStar = function(source, target) {
     // Compares the value of two nodes.
     function nodeValue(node1, node2) {
@@ -113,7 +121,23 @@ function(   PriorityQueue,      pp) {
     }
   }
 
-  // Copied from NavMes.prototype.generateAdjacencyGrid.
+  /**
+   * Holds the "neighbor" relationship of Poly objects in the partition
+   * using the Poly's themselves as keys, and an array of Poly's as
+   * values, where the Polys in the array are neighbors of the Poly
+   * that was the key.
+   * @typedef AdjacencyGrid
+   * @type {Object.<Poly, Array<Poly>>}
+   */
+
+  /**
+   * Given an array of Poly objects, find all neighboring polygons for
+   * each polygon.
+   * @private
+   * @param {Array.<Poly>} polys - The array of polys to find neighbors
+   *   among.
+   * @return {AdjacencyGrid} - The "neighbor" relationships.
+   */
   Pathfinder.prototype.generateAdjacencyGrid = function(polys) {
     var neighbors = new WeakMap();
     polys.forEach(function(poly, polyI, polys) {
