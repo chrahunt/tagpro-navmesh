@@ -144,7 +144,6 @@ function(poly2tri) {
     this.points[0] = p1;
     this.points[1] = p2;
     this.points[2] = p3;
-    this.calcCircumcircle();
   }
 
   // Takes an index and returns the point at that index, or null.
@@ -275,16 +274,6 @@ function(poly2tri) {
     }
     return result;
   }
-
-  PVertex = function() {
-    this.active = false;
-    this.convex = false;
-    this.ear = false;
-    this.next = null;
-    this.prev = null;
-    this.angle = 0;
-    this.p = null;
-  };
 
   //// PARTITION ////
   Partition = function() {
