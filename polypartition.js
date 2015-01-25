@@ -281,23 +281,6 @@ function(poly2tri) {
   };
   exports.Partition = Partition;
 
-  Partition.prototype.isConvex = function(p1, p2, p3) {
-    var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
-    return (tmp > 0);
-  }
-
-  Partition.prototype.isReflex = function(p1, p2, p3) {
-    return !this.isConvex(p1, p2, p3);
-  }
-
-  Partition.prototype.normalize = function(p) {
-    var n = Math.sqrt(p.dot(p));
-    if (n !== 0)
-      return p.div(n);
-    else
-      return new Point(0, 0);
-  }
-
   Partition.prototype.convertTrianglesToPolys = function(triangles) {
     var polys = triangles.map(function(triangle) {
       var poly = new Poly();
@@ -325,7 +308,7 @@ function(poly2tri) {
       for (var i = 0; i < poly.numpoints; i++) {
         var prev = poly.getPrevI(i);
         var next = poly.getNextI(i);
-        if (this.isReflex(poly.getPoint(prev), poly.getPoint(i), poly.getPoint(next))) {
+        if (!PolyUtils.isConvex(poly.getPoint(prev), poly.getPoint(i), poly.getPoint(next))) {
           reflex = true;
           break;
         }
@@ -387,7 +370,7 @@ function(poly2tri) {
         i23 = poly2.getNextI(i22);
         p3 = poly2.getPoint(i23);
 
-        if (!this.isConvex(p1, p2, p3)) continue;
+        if (!PolyUtils.isConvex(p1, p2, p3)) continue;
 
         p2 = poly1.getPoint(i12);
         i13 = poly1.getNextI(i12);
@@ -395,7 +378,7 @@ function(poly2tri) {
         i23 = poly2.getPrevI(i21);
         p1 = poly2.getPoint(i23);
 
-        if (!this.isConvex(p1, p2, p3)) continue;
+        if (!PolyUtils.isConvex(p1, p2, p3)) continue;
 
         var newpoly = new Poly();
         newpoly.init(poly1.numpoints + poly2.numpoints - 2);
@@ -447,6 +430,58 @@ function(poly2tri) {
       }
     }
     return null;
+  }
+  /**
+   * Holds the properties of a collision, if one occurred.
+   * @typedef Collision
+   * @type {object}
+   * @property {boolean} collides - Whether there is a collision.
+   * @property {boolean} inside - Whether one object is inside the other.
+   * @property {?Point} point - The point of collision, if collision
+   *   occurs, and if `inside` is false.
+   * @property {?Point} normal - A unit vector normal to the point
+   *   of collision, if it occurs and if `inside` is false.
+   */
+  /**
+   * If the ray intersects the circle, the distance to the intersection
+   * along the ray is returned, otherwise false is returned.
+   * @param {Point} p - The start of the ray.
+   * @param {Point} ray - Unit vector extending from `p`.
+   * @param {Point} c - The center of the circle for the object being
+   *   checked for intersection.
+   * @param {number} radius - The radius of the circle.
+   * @return {Collision} - The collision information.
+   */
+  PolyUtils.lineCircleIntersection = function(p, ray, c, radius) {
+    var collision = {
+      collides: false,
+      inside: false,
+      point: null,
+      normal: null
+    }
+    var vpc = c.sub(p);
+
+    if (vpc.len() <= radius) {
+      // Point is inside obstacle.
+      collision.collides = true;
+      collision.inside = (vpc.len() !== radius);
+    } else if (ray.dot(vpc) >= 0) {
+      // Circle is ahead of point.
+      // Projection of center point onto ray.
+      var pc = p.add(ray.mul(ray.dot(vpc)));
+      // Length from c to its projection on the ray.
+      var len_c_pc = c.sub(pc).len();
+
+      if (len_c_pc <= radius) {
+        collision.collides = true;
+
+        // Distance from projected point to intersection.
+        var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
+        collision.point = pc.sub(ray.mul(len_intersection));
+        collision.normal = collision.point.sub(c).normalize();
+      }
+    }
+    return collision;
   }
   exports.PolyUtils = PolyUtils;
 
