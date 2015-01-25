@@ -293,15 +293,28 @@ function(poly2tri) {
     return polys;
   }
 
-  // Using Hertel-Mehlhorn
-  // Takes a polygon outline and an array of polygons defining holes.
-  // Poly vertices must be in CW order, holes in CCW order. This can be
-  // done using setOrientation.
-  Partition.prototype.convexPartition = function(poly, holes) {
+  /**
+   * Partition a polygon with (optional) holes into a set of convex
+   * polygons. The vertices of the polygon must be given in CW order,
+   * and the vertices of the holes must be in CCW order. Uses poly2tri
+   * for the initial triangulation and Hertel-Mehlhorn to combine them
+   * into convex polygons.
+   * @param {Poly} poly - The polygon to use as the outline.
+   * @param {Array.<Poly>} [holes] - An array of holes present in the
+   *   polygon.
+   * @param {number} [minArea=5] - An optional parameter that filters
+   *   out polygons in the partition smaller than this value.
+   * @return {Array.<Poly>} - The set of polygons defining the
+   *   partition of the provided polygon.
+   */
+  Partition.prototype.convexPartition = function(poly, holes, minArea) {
+    if (typeof holes == 'undefined') holes = false;
+    if (typeof minArea == 'undefined') minArea = 5;
+
     var i11, i12, i13, i21, i22, i23;
     var parts = new Array();
 
-    // Check if poly is convex only if there are no holes.
+    // Check if poly is already convex only if there are no holes.
     if (!holes) {
       var reflex = false;
       // Check if already convex.
@@ -319,24 +332,30 @@ function(poly2tri) {
       }
     }
 
-    // Turn holes into arrays of poly2tri Points.
-    holes = holes.map(function(poly) {
-      return poly.points.map(function(p) {
-        return new poly2tri.Point(p.x, p.y);
-      });
-    });
-
-    // Do the same for the outline.
+    // Convert polygon into format required by poly2tri.
     var contour = poly.points.map(function(p) {
       return new poly2tri.Point(p.x, p.y);
     });
 
+    if (holes) {
+      // Convert holes into format required by poly2tri.
+      holes = holes.map(function(poly) {
+        return poly.points.map(function(p) {
+          return new poly2tri.Point(p.x, p.y);
+        });
+      });
+    }
+
     var swctx = new poly2tri.SweepContext(contour);
-    var triangles = swctx.addHoles(holes).triangulate().getTriangles();
+    if (holes) {
+      swctx.addHoles(holes);
+    }
+    var triangles = swctx.triangulate().getTriangles();
     
-    // Convert poly2tri triangles back into polygons and filter out the small ones.
+    // Convert poly2tri triangles back into polygons and filter out the
+    // ones too small to be relevant.
     triangles = this.convertTrianglesToPolys(triangles).filter(function(poly) {
-      return poly.getArea() > 5;
+      return poly.getArea() >= minArea;
     });
 
     for (var s1 = 0; s1 < triangles.length; s1++) {
