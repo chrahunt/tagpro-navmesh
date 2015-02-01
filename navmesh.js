@@ -16,7 +16,7 @@ requirejs.config({
  * @module navmesh
  */
 define(['./polypartition', './pathfinder', './clipper', './worker!./aStarWorker.js', 'bragi'],
-function(  pp,                Pathfinder,     ClipperLib,  aStarWorker,               Logger) {
+function(  pp,                Pathfinder,     ClipperLib,  workerPromise,               Logger) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Partition = pp.Partition;
@@ -32,10 +32,11 @@ function(  pp,                Pathfinder,     ClipperLib,  aStarWorker,         
     if (typeof polys == 'undefined') { return; }
     this.initialized = false;
 
-    if (aStarWorker) {
+    // Set callbacks for worker promise object.
+    workerPromise.then(function(worker) {
       this.workerInitialized = false;
       Logger.log("navmesh", "Using worker.");
-      this.worker = aStarWorker;
+      this.worker = worker;
       this.worker.onmessage = function(message) {
         var data = message.data;
         var name = data[0];
@@ -49,10 +50,12 @@ function(  pp,                Pathfinder,     ClipperLib,  aStarWorker,         
           this._workerInit();
         }
       }.bind(this);
-    } else {
+    }.bind(this), function(Error) {
       Logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
+      Logger.log("navmesh:warn", "Worker error:", Error);
       this.worker = false;
-    }
+    }.bind(this));
+
     this.init(polys);
   };
 
