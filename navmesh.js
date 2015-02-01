@@ -10,13 +10,13 @@ requirejs.config({
  * A NavMesh represents the traversable area of a map and gives
  * utilities for pathfinding.
  * Usage:
- *   var polys = mapParser.parse(tiles);
- *   var navmesh = new NavMesh(polys);
+ *   // Assuming the 2d map tiles array is available:
+ *   var navmesh = new NavMesh(map);
  *   navmesh.calculatePath(currentlocation, targetLocation, callback);
  * @module navmesh
  */
-define(['./polypartition', './pathfinder', './clipper', './worker!./aStarWorker.js', 'bragi'],
-function(  pp,                Pathfinder,     ClipperLib,  workerPromise,               Logger) {
+define(['./polypartition', './parse-map', './pathfinder', './clipper', './worker!./aStarWorker.js', 'bragi'],
+function(  pp,                MapParser,     Pathfinder,     ClipperLib,  workerPromise,             Logger) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Partition = pp.Partition;
@@ -26,11 +26,17 @@ function(  pp,                Pathfinder,     ClipperLib,  workerPromise,       
   /**
    * @constructor
    * @alias module:navmesh
-   * @param {Array.<Poly>}
+   * @param {MapTiles} map - The 2d array defining the map tiles.
    */
-  var NavMesh = function(polys) {
-    if (typeof polys == 'undefined') { return; }
+  var NavMesh = function(map) {
+    if (typeof map == 'undefined') { return; }
     this.initialized = false;
+
+    // Parse map tiles into polygons.
+    var polys = MapParser.parse(map);
+    if (!polys) {
+      throw "Map parsing failed!";
+    }
 
     // Set callbacks for worker promise object.
     workerPromise.then(function(worker) {

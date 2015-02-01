@@ -2,12 +2,15 @@
  * @module map/parse
  */
 define(['./action-values', './polypartition'],
-function(   ActionValues,   pp) {
+function(  ActionValues,      pp) {
   var Point = pp.Point;
   var Poly = pp.Poly;
 
-  // Utilities for generating usable map representations from map tiles.
-  var MapParser = function() {}
+  /**
+   * Contains utilities for generating usable map representations from
+   * map tiles.
+   */
+  var MapParser = {};
 
   /**
    * An object with x and y properties that represents a coordinate pair.
@@ -240,12 +243,21 @@ function(   ActionValues,   pp) {
     var last_action = null;
     // Object to track location + actions that have been taken.
     var taken_actions = {};
+    var iterations = 0;
 
     // Iterate until all nodes have been visited.
     while (discovered.length !== total) {
       if (!node) {
-        console.log("Reached end.");
+        // Reached end.
         break;
+      }
+      if (iterations > total * 4) {
+        // Sanity check on number of iterations. Maximum number of
+        // times a single tile would be visited is 4 for a fan-like
+        // pattern of triangle wall tiles.
+        break;
+      } else {
+        iterations++;
       }
       // It's okay to be in a discovered node if shapes are adjacent,
       // we just want to keep track of the ones we've seen.
@@ -333,7 +345,12 @@ function(   ActionValues,   pp) {
         }
       }
     } // end while
-    return shapes;
+
+    if (discovered.length == total) {
+      return shapes;
+    } else {
+      return null;
+    }
   }
 
   /**
@@ -466,7 +483,8 @@ function(   ActionValues,   pp) {
   /**
    * Converts the 2d array defining a TagPro map into shapes.
    * @param {MapTiles} tiles - The tiles as retrieved from `tagpro.map`.
-   * @return {ParsedMap} - The result of converting the map into polygons.
+   * @return {?ParsedMap} - The result of converting the map into
+   *   polygons, or null if there was an issue parsing the map.
    */
   MapParser.parse = function(tiles) {
     // Make copy of tiles to preserve original array
@@ -505,6 +523,10 @@ function(   ActionValues,   pp) {
     var tile_actions = map2d(contour_grid_2, getAction);
 
     var generated_shapes = generateShapes(tile_actions);
+    if (!generated_shapes) {
+      return null;
+    }
+
     var actual_shapes = generated_shapes.filter(function(elt) {
       return elt.length > 0;
     });
