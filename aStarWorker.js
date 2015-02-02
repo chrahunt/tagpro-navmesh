@@ -1,4 +1,4 @@
-importScripts('http://localhost:8000/map/require.js');
+importScripts('{{#requirejs#}}');
 
 // Default response for indicating requirejs is not loaded.
 onmessage = function(message) {
@@ -10,7 +10,7 @@ onmessage = function(message) {
 }
 
 require({
-        baseUrl: 'http://localhost:8000/map/'
+        baseUrl: '{{#baseUrl#}}'
     }, ['./pathfinder', './polypartition'],
 function(  Pathfinder,      pp) {
   var Point = pp.Point;

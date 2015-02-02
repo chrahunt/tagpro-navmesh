@@ -1,8 +1,27 @@
-require(['parse-map', 'polypartition', 'tile-grids'],
-function( MapParser,   pp,              tile_grids) {
+requirejs.config({
+  shim: {
+    'lib/clipper': {
+      exports: 'ClipperLib'
+    }
+  },
+  map: {
+    '*': {
+      'bragi': 'examples/js/lib/bragi-browser'
+    }
+  },
+  baseUrl: '..',
+  config: {
+    requirejsUrl: 'examples/js/lib/require.js'
+  }
+});
+
+require(['navmesh', 'parse-map', 'polypartition', 'examples/js/tile-grids'],
+function( NavMesh,   mapParser,   pp,              tile_grids) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;
+  PolyUtils = pp.PolyUtils;
+
   // Drawing functions.
   // Takes in an array of x, y objects
   function drawShape(shapeInfo, canvas) {
@@ -31,7 +50,6 @@ function( MapParser,   pp,              tile_grids) {
     context.strokeStyle = '#003300';
     context.stroke();
   }
-
   function drawPath(pathInfo, canvas) {
     var context = canvas.getContext('2d');
     context.beginPath();
@@ -80,11 +98,7 @@ function( MapParser,   pp,              tile_grids) {
   function drawOutline(shapes, canvas) {
     for (var i = 0; i < shapes.length; i++) {
       if (shapes[i] instanceof Poly) {
-        if (shapes[i].getOrientation() == "CCW") {
-          drawPoly(shapes[i], canvas, 'green');
-        } else {
-          drawPoly(shapes[i], canvas, 'red');
-        }
+        drawPoly(shapes[i], canvas);
       } else {
         drawShape(shapes[i], canvas);
       }
@@ -98,13 +112,56 @@ function( MapParser,   pp,              tile_grids) {
     return new Point(e.clientX - rect.left, e.clientY - rect.top);
   }
 
-  var tiles = tile_grids["Volt"];
-  // Get outline of walls in map.
-  var parsed_map = MapParser.parse(tiles);
-  
-  var polys = parsed_map.walls.concat(parsed_map.obstacles);
-  // Initialize canvas.
+  function getPathAndDrawUpdate(start, end) {
+    var c2d = canvas.getContext('2d');
+    c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
+    drawOutline(parts, canvas);
+
+    navmesh.calculatePath(startPoint, endPoint, function(path) {
+      drawPoly(PolyUtils.findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
+      drawPoly(PolyUtils.findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
+      path.unshift(startPoint);
+      drawPath(path, canvas);
+    });
+  }
+
+  var tiles = tile_grids["Hurricane2"];
+
+  // Convert and generate navmesh.
+  var navmesh = new NavMesh(tiles);
   var canvas = initCanvasForTiles(tiles);
 
-  drawOutline(polys, canvas);
+  // Get shapes defining navmesh
+  var parts = navmesh.polys;
+
+  // Add original walls and obstacles to shapes for display.
+  Array.prototype.push.apply(parts, navmesh.parsedMap.walls);
+  Array.prototype.push.apply(parts, navmesh.parsedMap.obstacles);
+
+  // Initialize canvas.
+
+  // Set random start and end for pathfinding demo.
+  if (parts.length > 0) {
+    var startIndex = Math.floor(Math.random() * parts.length);
+    var endIndex = Math.floor(Math.random() * parts.length);
+    var startPoint = parts[startIndex].centroid();
+    var endPoint = parts[endIndex].centroid();
+  }
+
+  getPathAndDrawUpdate(startPoint, endPoint);
+
+  // Draw outline around clicked element, calling back to navmesh function.
+  document.getElementById('c').addEventListener('click', function(evt) {
+    var p = getCanvasPointClicked(evt, this);
+    var shift = evt.shiftKey;
+    var poly = PolyUtils.findPolyForPoint(p, navmesh.polys);
+    if (poly) {
+      if (shift) {
+        endPoint = p;
+      } else {
+        startPoint = p;
+      }
+      getPathAndDrawUpdate(startPoint, endPoint);
+    }
+  }, false);
 });

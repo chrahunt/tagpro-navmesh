@@ -1,6 +1,6 @@
 requirejs.config({
   shim: {
-    './clipper': {
+    './lib/clipper': {
       exports: 'ClipperLib'
     }
   }
@@ -15,8 +15,8 @@ requirejs.config({
  *   navmesh.calculatePath(currentlocation, targetLocation, callback);
  * @module navmesh
  */
-define(['./polypartition', './parse-map', './pathfinder', './clipper', './worker!./aStarWorker.js', 'bragi'],
-function(  pp,                MapParser,     Pathfinder,     ClipperLib,  workerPromise,             Logger) {
+define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './worker!./aStarWorker.js', 'bragi'],
+function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise,              Logger) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Partition = pp.Partition;
@@ -71,6 +71,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,  worker
    * @param {ParsedMap} - The map information parsed into polygons.
    */
   NavMesh.prototype.init = function(parsedMap) {
+    // Save original parsed map polys.
+    this.parsedMap = parsedMap;
+
     // Perform initial separation of any slightly overlapping polygons.
     this._separatePolys(parsedMap.walls);
     this._separatePolys(parsedMap.obstacles);

@@ -1,4 +1,4 @@
-define(['./priority-queue', './polypartition'],
+define(['./lib/priority-queue', './polypartition'],
 function(   PriorityQueue,      pp) {
   var PolyUtils = pp.PolyUtils;
 
