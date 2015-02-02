@@ -4,7 +4,9 @@ For an example of creating and generating a path between two points, see `navmes
 
 A NavMesh can be constructed by passing in the `tagpro.map` array directly.
 
-    var mesh = new NavMesh(tagpro.map);
+```javascript
+var mesh = new NavMesh(tagpro.map);
+```
 
 This constructs the navigation mesh representation for the map and carries out initialization of the mesh state required for navigation.
 
@@ -12,9 +14,11 @@ Where possible, navigation is handled using a web worker. If the web worker cann
 
 Regardless of where the execution takes place, the interface to requesting and using a path is the same. Assuming a NavMesh has been constructed as above,
 
-    navmesh.calculatePath(start, end, function(path) {
-      var nextPoint = path.unshift();
-    });
+```javascript
+navmesh.calculatePath(start, end, function(path) {
+  var nextPoint = path.unshift();
+});
+```
 
 Where `start` and `end` are `Point` objects (as defined in `polypartition`) specifying the start and end of the path. The callback function will be passed the path. If found, the path is an Array of `Point`s, or if no path is found, `null`.
 
