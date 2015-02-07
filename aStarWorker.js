@@ -1,18 +1,5 @@
-importScripts('{{#requirejs#}}');
-
-// Default response for indicating requirejs is not loaded.
-onmessage = function(message) {
-  var data = message.data;
-  var name = data[0];
-  if (name == "isInitialized") {
-    postMessage(["init", false]);
-  }
-}
-
-require({
-        baseUrl: '{{#baseUrl#}}'
-    }, ['./pathfinder', './polypartition'],
-function(  Pathfinder,      pp) {
+require(['./pathfinder', './polypartition'],
+function(   Pathfinder,     pp) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var PolyUtils = pp.PolyUtils;
