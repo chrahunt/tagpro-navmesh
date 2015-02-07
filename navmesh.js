@@ -1,3 +1,4 @@
+// Config for build.
 requirejs.config({
   shim: {
     './lib/clipper': {
@@ -68,6 +69,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Initialize the navigation mesh with the polygons describing the
    * map elements.
+   * @private
    * @param {ParsedMap} - The map information parsed into polygons.
    */
   NavMesh.prototype.init = function(parsedMap) {
@@ -290,28 +292,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     co.MiterLimit = 2;
     var wall_fillType = ClipperLib.PolyFillType.pftEvenOdd;
     var obstacle_fillType = ClipperLib.PolyFillType.pftNonZero;
-    
-    // Trying to use the offsetting operation on all of the 
-    // walls at once resulted in a single polygon.
-    //var walls = parsedMap.walls.map(this._convertPolyToClipper);
-
-    // Add shape around whole thing so the interiors and island walls
-    // are interpreted correctly.
-    //walls.push(this._getBoundingShapeForPaths(walls));
-    
-    //ClipperLib.JS.ScaleUpPaths(walls, scale);
-    /*var offsetted_walls = new ClipperLib.Paths();
-    co.Clear();
-    co.AddPaths(walls, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
-    co.Execute(offsetted_walls, offset * scale);
-
-    // Find and remove outer bounding shape that was added.
-    var bounds = ClipperLib.Clipper.GetBounds(offsetted_walls);
-    offsetted_walls = offsetted_walls.filter(function(path) {
-      var pathBounds = ClipperLib.Clipper.GetBounds([path]);
-      return pathBounds.top !== bounds.top && pathBounds.bottom !== bounds.bottom &&
-        pathBounds.left !== bounds.left && pathBounds.right !== bounds.right;
-    });*/
 
     var offsetted_interior_walls = [];
     // Handle interior walls.
@@ -488,36 +468,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       return new Point(p.X, p.Y);
     });
     return poly;
-  }
-
-  // private
-  // Get bounds of a given polygon. Returns an object containing minX, minY, maxX, maxY.
-  NavMesh.prototype._getBounds = function(poly) {
-    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    poly.points.forEach(function(p) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    });
-    return {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
-  }
-
-  // private
-  // Get a clipper point array bounding a given Poly by amount 'buffer'.
-  NavMesh.prototype._getBoundingShape = function(poly, buffer) {
-    if (typeof buffer == 'undefined') buffer = 5;
-    var bounds = this._getBounds(poly);
-    bounds.minX -= buffer;
-    bounds.minY -= buffer;
-    bounds.maxX += buffer;
-    bounds.maxY += buffer;
-    var shape = [];
-    shape.push({X: bounds.maxX, Y: bounds.maxY});
-    shape.push({X: bounds.minX, Y: bounds.maxY});
-    shape.push({X: bounds.minX, Y: bounds.minY});
-    shape.push({X: bounds.maxX, Y: bounds.minY});
-    return shape;
   }
 
   /**
