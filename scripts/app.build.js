@@ -9,8 +9,7 @@
   },
   paths: {
     // Map to optimized worker file.
-    'aStarWorker': '../map-build/aStarWorker',
-    'bragi': 'examples/js/lib/bragi-browser'
+    'aStarWorker': '../map-build/aStarWorker'
   },
   optimize: "none"
 })

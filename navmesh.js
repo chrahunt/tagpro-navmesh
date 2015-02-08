@@ -7,8 +7,8 @@
  *   navmesh.calculatePath(currentlocation, targetLocation, callback);
  * @module navmesh
  */
-define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './worker!./aStarWorker.js', 'bragi'],
-function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise,              Logger) {
+define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './worker!./aStarWorker.js'],
+function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise) {
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Partition = pp.Partition;
@@ -19,9 +19,14 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @constructor
    * @alias module:navmesh
    * @param {MapTiles} map - The 2d array defining the map tiles.
+   * @param {Logger} [logger] - The logger to use.
    */
-  var NavMesh = function(map) {
-    if (typeof map == 'undefined') { return; }
+  var NavMesh = function(map, logger) {
+    if (typeof logger == 'undefined') {
+      logger = {};
+      logger.log = function() {};
+    }
+    this.logger = logger;
     this.initialized = false;
 
     // Parse map tiles into polygons.
@@ -33,13 +38,13 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Set callbacks for worker promise object.
     workerPromise.then(function(worker) {
       this.workerInitialized = false;
-      Logger.log("navmesh", "Using worker.");
+      this.logger.log("navmesh", "Using worker.");
       this.worker = worker;
       this.worker.onmessage = function(message) {
         var data = message.data;
         var name = data[0];
         if (name !== "log")
-          Logger.log("navmesh:debug", "Message received from worker: ", data);
+          this.logger.log("navmesh:debug", "Message received from worker: ", data);
           
         if (name == "log") {
           this._workerLogger(data.slice(1));
@@ -49,8 +54,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
         }
       }.bind(this);
     }.bind(this), function(Error) {
-      Logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
-      Logger.log("navmesh:warn", "Worker error:", Error);
+      this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
+      this.logger.log("navmesh:warn", "Worker error:", Error);
       this.worker = false;
     }.bind(this));
 
@@ -117,11 +122,11 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   when the path has been calculated.
    */
   NavMesh.prototype.calculatePath = function(source, target, callback) {
-    Logger.log("navmesh:debug", "Calculating path.");
+    this.logger.log("navmesh:debug", "Calculating path.");
 
     // Use web worker if present.
     if (this.worker && this.workerInitialized) {
-      Logger.log("navmesh:debug", "Using worker to calculate path.");
+      this.logger.log("navmesh:debug", "Using worker to calculate path.");
       this.worker.postMessage(["aStar", source, target]);
       // Set callback so it is accessible when results are sent back.
       this.lastCallback = callback;
@@ -494,7 +499,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   associate the message with.
    */
   NavMesh.prototype._workerLogger = function(message) {
-    Logger.log.apply(null, message);
+    this.logger.log.apply(null, message);
   }
 
   /**
@@ -517,7 +522,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
       // Omit log messages from worker in debug message.
       if (name !== "log")
-        Logger.log("navmesh:debug", "Message received from worker:", data);
+        this.logger.log("navmesh:debug", "Message received from worker:", data);
 
       if (name == "log") {
         this._workerLogger(data.slice(1));

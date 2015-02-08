@@ -23,7 +23,7 @@ function(text) {
 
       var blob = new Blob(
         [content],
-        {type: 'application/javascript'}
+        {type: "application/javascript"}
       );
       try {
         var worker = new Worker(URL.createObjectURL(blob));
@@ -58,7 +58,6 @@ function(text) {
         content = text.jsEscape(content);
         write.asModule(pluginName + "!" + moduleName,
           "define(function() {" +
-            "console.log('test');" +
             "var getWorkerPromise = " + getWorkerPromise.toString() + ";" +
             "return getWorkerPromise('" + content + "');" +
           "});\n"
