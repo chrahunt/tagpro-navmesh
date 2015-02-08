@@ -27,45 +27,23 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       logger.log = function() {};
     }
     this.logger = logger;
-    this.initialized = false;
-    // Make utilities in polypartition available without requiting
-    // that it be included in external scripts.
-    this.geom = pp;
 
+    this.initialized = false;
+
+    this._setupWorker();
+    
     // Parse map tiles into polygons.
     var polys = MapParser.parse(map);
     if (!polys) {
       throw "Map parsing failed!";
     }
 
-    // Set callbacks for worker promise object.
-    workerPromise.then(function(worker) {
-      this.workerInitialized = false;
-      this.logger.log("navmesh", "Using worker.");
-      this.worker = worker;
-      this.worker.onmessage = function(message) {
-        var data = message.data;
-        var name = data[0];
-        if (name !== "log")
-          this.logger.log("navmesh:debug", "Message received from worker: ", data);
-          
-        if (name == "log") {
-          this._workerLogger(data.slice(1));
-        } else if (name == "init") {
-          this.workerInitialized = data[1];
-          this._workerInit();
-        }
-      }.bind(this);
-      // Check if worker is already initialized.
-      this.worker.postMessage(["isInitialized"]);
-    }.bind(this), function(Error) {
-      this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
-      this.logger.log("navmesh:warn", "Worker error:", Error);
-      this.worker = false;
-    }.bind(this));
-
-    this.init(polys);
+    this._init(polys);
   };
+
+  // Make utilities in polypartition available without requiring
+  // that it be included in external scripts.
+  NavMesh.geom = pp;
 
   /**
    * Initialize the navigation mesh with the polygons describing the
@@ -73,7 +51,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @private
    * @param {ParsedMap} - The map information parsed into polygons.
    */
-  NavMesh.prototype.init = function(parsedMap) {
+  NavMesh.prototype._init = function(parsedMap) {
     // Save original parsed map polys.
     this.parsedMap = parsedMap;
 
@@ -112,18 +90,35 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   }
 
   /**
+   * Ensure that passed function is executed when the navmesh has been
+   * fully initialized.
+   * @param {Function} fn - The function to call when the navmesh is
+   *   initialized.
+   */
+  NavMesh.prototype.onInit = function(fn) {
+    if (this.initialized) {
+      fn();
+    } else {
+      setTimeout(function() {
+        this.onInit(fn);
+      }.bind(this), 10);
+    }
+  };
+
+  /**
    * Callback for path calculation requests.
-   * @callback pathCallback
+   * @callback PathCallback
    * @param {?Array.<Point>} - The calculated path, the first Point
    *   of which should be the target of any navigation. The goal Point
-   *   is included at the end of the path.
+   *   is included at the end of the path. If no path is found then
+   *   null is passed to the callback.
    */
   /**
    * Calculate a path from the source point to the target point, invoking
    * the callback with the path after calculation.
    * @param {Point} source - The start location of the search.
    * @param {Point} target - The target of the search.
-   * @param {pathCallback} callback - The callback function invoked
+   * @param {PathCallback} callback - The callback function invoked
    *   when the path has been calculated.
    */
   NavMesh.prototype.calculatePath = function(source, target, callback) {
@@ -145,20 +140,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     }
   }
 
-  // Return true if p1 is visible from p2. The offset outline and holes are
-  // used as obstacles in this case.
+  /**
+   * Check whether one point is visible from another, without being
+   * blocked by walls or (currently) spikes.
+   * @param {} p1 - The first point.
+   * @param {} p2 - The second point.
+   * @return {boolean} - Whether `p1` is visible from `p2`.
+   */
   NavMesh.prototype.checkVisible = function(p1, p2) {
     var edge = new Edge(p1, p2);
-
-    checkEdge = function(edges, edge_index, my_edge) {
-      var thisEdge = edges[edge_index];
-
-      if (edge_index !== edges.length - 1) {
-        setTimeout(function() {
-          checkEdge(edges, edge_index + 1, my_edge);
-        }, 1000);
-      }
-    }
     var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
     return !blocked;
   }
@@ -497,6 +487,30 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   }
 
   /**
+   * Sets up callbacks on the web worker promise object to initialize
+   * the web worker interface once loaded.
+   * @private
+   */
+  NavMesh.prototype._setupWorker = function() {
+    // Initial state.
+    this.worker = false;
+    this.workerInitialized = false;
+
+    // Set callbacks for worker promise object.
+    workerPromise.then(function(worker) {
+      this.logger.log("navmesh", "Worker loaded.");
+      this.worker = worker;
+      this.worker.onmessage = this._getWorkerInterface();
+      // Check if worker is already initialized.
+      this.worker.postMessage(["isInitialized"]);
+    }.bind(this), function(Error) {
+      this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
+      this.logger.log("navmesh:warn", "Worker error:", Error);
+      this.worker = false;
+    }.bind(this));
+  };
+
+  /**
    * Handler for log messages sent by worker.
    * @private
    * @param {Array.<(string|object)>} message - Array of arguments to
@@ -508,24 +522,18 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   }
 
   /**
-   * Fully initialize listeners for pathfinding web worker.
+   * Returns the function to be used for the `onmessage` callback for
+   * the web worker.
    * @private
+   * @return {Function} - The `onmessage` handler for the web worker.
    */
-  NavMesh.prototype._workerInit = function() {
-    if (this.initialized && this.worker && this.workerInitialized) {
-      // Send polygons of navigation mesh to web worker.
-      this.worker.postMessage(["polys", this.polys]);
-    }
-
-    /**
-     * Set up listeners for web worker messages.
-     * Messages can have type "log" and "result".
-     */
-    this.worker.onmessage = function(message) {
+  NavMesh.prototype._getWorkerInterface = function() {
+    return function(message) {
       var data = message.data;
       var name = data[0];
 
-      // Omit log messages from worker in debug message.
+      // Output debug message for all messages received except "log"
+      // messages.
       if (name !== "log")
         this.logger.log("navmesh:debug", "Message received from worker:", data);
 
@@ -543,9 +551,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
           path = path.slice(1);
         }
         this.lastCallback(path);
+      } else if (name == "initialized") {
+        this.workerInitialized = true;
+        // Sent parsed map polygons to worker when available.
+        this.onInit(function() {
+          this.worker.postMessage(["polys", this.polys]);
+        }.bind(this));
       }
-    }.bind(this)
-  }
+    }.bind(this);
+  };
 
   return NavMesh;
 });

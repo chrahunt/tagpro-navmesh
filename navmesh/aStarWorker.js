@@ -92,11 +92,11 @@ function(   Pathfinder,     pp) {
       var path = self.pathfinder.aStar(source, target);
       postMessage(["result", path]);
     } else if (name == "isInitialized") {
-      postMessage(["init", true]);
+      postMessage(["initialized"]);
     }
   }
 
   Logger.log("worker", "Worker loaded.");
   // Sent confirmation that worker is initialized.
-  postMessage(["init", true]);
+  postMessage(["initialized"]);
 });
