@@ -23,3 +23,11 @@ navmesh.calculatePath(start, end, function(path) {
 Where `start` and `end` are `Point` objects (as defined in `polypartition`) specifying the start and end of the path. The callback function will be passed the path. If found, the path is an Array of `Point`s, or if no path is found, `null`.
 
 This project is in development.
+
+## Directories
+
+* **build**: Output directory for build process, contains latest version.
+* **examples**: Examples of usage.
+* **navmesh**: Source directory for project.
+* **tools**: Tools for building and generating map parsing definitions.
+    - **/build**: Scripts and instructions for generating built version of navmesh.

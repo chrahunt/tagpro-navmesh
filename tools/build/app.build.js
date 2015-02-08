@@ -1,14 +1,14 @@
 ({
-  baseUrl: "../",
-  name: "./scripts/almond",
+  baseUrl: "../../navmesh",
+  name: "../tools/build/almond",
   include: ['navmesh'],
-  out: "../../map-build/navmesh.js",
+  out: "../../build/navmesh.js",
   wrap: {
     startFile: "./start.frag",
     endFile: "./end.frag"
   },
   paths: {
     // Location of already-optimized worker file.
-    'aStarWorker': '../map-build/aStarWorker'
+    'aStarWorker': '../build/aStarWorker'
   }
 })
