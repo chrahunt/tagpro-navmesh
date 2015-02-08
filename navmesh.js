@@ -53,6 +53,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
           this._workerInit();
         }
       }.bind(this);
+      // Check if worker is already initialized.
+      this.worker.postMessage(["isInitialized"]);
     }.bind(this), function(Error) {
       this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
       this.logger.log("navmesh:warn", "Worker error:", Error);

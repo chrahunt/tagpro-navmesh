@@ -1,5 +1,5 @@
 /**
- * Build-compatible implementation of worker plugin
+ * Build-compatible implementation of worker plugin.
  */
 define(['./lib/text'],
 function(text) {
@@ -21,12 +21,8 @@ function(text) {
         return;
       }
 
-      var blob = new Blob(
-        [content],
-        {type: "application/javascript"}
-      );
       try {
-        var worker = new Worker(URL.createObjectURL(blob));
+        var worker = makeWebWorker(content);
         resolve(worker);
       } catch (e) {
         reject(Error("Syntax error in worker."));
@@ -34,8 +30,24 @@ function(text) {
     });
   }
 
+  /**
+   * Make a web worker from the provided string.
+   * @param {string} content - The content to use as the code for the
+   *   web worker.
+   * @return {Worker} - The constructed web worker.
+   * @throws {SyntaxError} - Thrown if the worker has a syntax error.
+   */
+  function makeWebWorker(content) {
+    var blob = new Blob(
+      [content],
+      {type: 'application/javascript'}
+    );
+    var worker = new Worker(URL.createObjectURL(blob));
+    return worker;
+  }
+
   var workerBuilder = {
-    version: "1.0.0",
+    version: "1.1.0",
     load: function (name, req, onLoad, config) {
       // This script is meant only for builds.
       if (!config.isBuild) {
@@ -46,7 +58,6 @@ function(text) {
       console.log(url);
       text.get(url, function(data) {
         if (config.isBuild) {
-          //console.log(data);
           buildMap[name] = data;
           onLoad(data);
         }
@@ -58,6 +69,7 @@ function(text) {
         content = text.jsEscape(content);
         write.asModule(pluginName + "!" + moduleName,
           "define(function() {" +
+            "var makeWebWorker = " + makeWebWorker.toString() + ";" +
             "var getWorkerPromise = " + getWorkerPromise.toString() + ";" +
             "return getWorkerPromise('" + content + "');" +
           "});\n"

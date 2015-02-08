@@ -1,9 +1,4 @@
 requirejs.config({
-  shim: {
-    'lib/clipper': {
-      exports: 'ClipperLib'
-    }
-  },
   map: {
     '*': {
       'bragi': 'examples/js/lib/bragi-browser'
@@ -11,12 +6,14 @@ requirejs.config({
   },
   baseUrl: '..',
   config: {
+    // Example requirejsUrl for web worker. Will not work if run as
+    // a file.
     requirejsUrl: 'examples/js/lib/require.js'
   }
 });
 
-require(['navmesh', 'parse-map', 'polypartition', 'examples/js/tile-grids'],
-function( NavMesh,   mapParser,   pp,              tile_grids) {
+require(['navmesh', 'polypartition', 'examples/js/tile-grids'],
+function( NavMesh,   pp,              tile_grids) {
   Point = pp.Point;
   Poly = pp.Poly;
   Partition = pp.Partition;

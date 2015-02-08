@@ -8,8 +8,7 @@
     endFile: "./end.frag"
   },
   paths: {
-    // Map to optimized worker file.
+    // Location of already-optimized worker file.
     'aStarWorker': '../map-build/aStarWorker'
-  },
-  optimize: "none"
+  }
 })
