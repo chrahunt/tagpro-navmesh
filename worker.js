@@ -30,8 +30,6 @@
  *   options passed to web worker RequireJS.
  */
 define(function () {
-  var requirejsPlaceholder = "requirejs";
-  var baseUrlPlaceholder = "baseUrl";
   /**
    * Retrieve the web worker at the given URL. If the worker can be
    * loaded then a Promise is returned. The Promise is fulfilled when
@@ -140,6 +138,7 @@ define(function () {
       var url = req.toUrl(name);
 
       onLoad(getWorkerPromise(url, req, config));
-    }
+    },
+    pluginBuilder: 'workerBuilder'
   };
 });

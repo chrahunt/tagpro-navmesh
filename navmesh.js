@@ -1,12 +1,3 @@
-// Config for build.
-requirejs.config({
-  shim: {
-    './lib/clipper': {
-      exports: 'ClipperLib'
-    }
-  }
-});
-
 /**
  * A NavMesh represents the traversable area of a map and gives
  * utilities for pathfinding.
