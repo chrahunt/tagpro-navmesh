@@ -106,7 +106,7 @@ function(  text) {
   }
 
   return {
-    version: "1.1.0",
+    version: "1.0.0",
     load: function (name, req, onLoad, config) {
       if (config.isBuild) {
         //don't do anything if this is a build, can't inline a web worker
@@ -119,6 +119,7 @@ function(  text) {
       var header = getWorkerHeader(req, config);
 
       onLoad(getWorkerPromise(url, header));
+      return;
     },
     pluginBuilder: 'workerBuilder'
   };

@@ -28,6 +28,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     }
     this.logger = logger;
     this.initialized = false;
+    // Make utilities in polypartition available without requiting
+    // that it be included in external scripts.
+    this.geom = pp;
 
     // Parse map tiles into polygons.
     var polys = MapParser.parse(map);
@@ -134,7 +137,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       this.lastCallback = callback;
     } else {
       path = this.pathfinder.aStar(source, target);
-      if (typeof path !== 'undefined') {
+      if (typeof path !== 'undefined' && path) {
         // Remove first entry, which is current position.
         path = path.slice(1);
       }

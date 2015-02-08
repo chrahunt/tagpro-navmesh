@@ -2,7 +2,7 @@
   baseUrl: "../../navmesh",
   name: "../tools/build/almond",
   include: ['navmesh'],
-  out: "../../build/navmesh.js",
+  out: "../../build/navmesh.min.js",
   wrap: {
     startFile: "./start.frag",
     endFile: "./end.frag"

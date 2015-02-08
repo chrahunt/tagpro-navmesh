@@ -1,15 +1,17 @@
-requirejs.config({
-  baseUrl: '..'
-});
+// Canvas drawing utility functions for example scripts.
+(function (root, factory) {
+    if (typeof define === 'function' && define.amd) {
+        // AMD
+        define([], factory);
+    } else {
+        // Browser global.
+        root.DrawUtils = factory();
+    }
+}(this, function() {
+  var DrawUtils = {};
 
-require(['parse-map', 'polypartition', 'examples/js/tile-grids'],
-function( MapParser,   pp,              tile_grids) {
-  Point = pp.Point;
-  Poly = pp.Poly;
-  Partition = pp.Partition;
-  // Drawing functions.
   // Takes in an array of x, y objects
-  function drawShape(shapeInfo, canvas) {
+  DrawUtils.drawShape = function(shapeInfo, canvas) {
     var context = canvas.getContext('2d');
     context.beginPath();
     var start = shapeInfo.shift();
@@ -24,7 +26,7 @@ function( MapParser,   pp,              tile_grids) {
     context.closePath();
   }
 
-  function drawPoint(point, canvas) {
+  DrawUtils.drawPoint = function(point, canvas) {
     var context = canvas.getContext('2d');
     var radius = 5;
     context.beginPath();
@@ -36,7 +38,7 @@ function( MapParser,   pp,              tile_grids) {
     context.stroke();
   }
 
-  function drawPath(pathInfo, canvas) {
+  DrawUtils.drawPath = function(pathInfo, canvas) {
     var context = canvas.getContext('2d');
     context.beginPath();
     var start = pathInfo.shift();
@@ -50,12 +52,12 @@ function( MapParser,   pp,              tile_grids) {
     context.stroke();
     context.closePath();
     pathInfo.forEach(function(p) {
-      drawPoint(p, canvas);
+      DrawUtils.drawPoint(p, canvas);
     });
   }
 
   // Takes in a polygon, canvas element, and [optional] color string.
-  function drawPoly(poly, canvas, color) {
+  DrawUtils.drawPoly = function(poly, canvas, color) {
     if (typeof color == 'undefined') color = 'black';
     var context = canvas.getContext('2d');
     context.beginPath();
@@ -71,44 +73,29 @@ function( MapParser,   pp,              tile_grids) {
     context.closePath();
   }
 
-  function initCanvasForTiles(tiles) {
-    var c = document.getElementById('c');
-    c.width = tiles.length * 40;
-    c.height = tiles[0].length * 40;
-    var c2 = c.getContext('2d');
-    c2.fillStyle = '#dd0';
-    return c;
+  DrawUtils.initCanvasForTiles = function(canvas, tiles) {
+    canvas.width = tiles.length * 40;
+    canvas.height = tiles[0].length * 40;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#dd0';
   }
 
   // Draw outlines on canvas.
-  function drawOutline(shapes, canvas) {
+  DrawUtils.drawOutline = function(shapes, canvas, colorFn) {
+    if (typeof colorFn == 'undefined') colorFn = false;
     for (var i = 0; i < shapes.length; i++) {
-      if (shapes[i] instanceof Poly) {
-        if (shapes[i].getOrientation() == "CCW") {
-          drawPoly(shapes[i], canvas, 'green');
-        } else {
-          drawPoly(shapes[i], canvas, 'red');
-        }
+      if (shapes[i] instanceof Array) {
+        DrawUtils.drawShape(shapes[i], canvas);
       } else {
-        drawShape(shapes[i], canvas);
+        if (colorFn) {
+          var color = colorFn(shapes[i]);
+          DrawUtils.drawPoly(shapes[i], canvas, color);
+        } else {
+          DrawUtils.drawPoly(shapes[i], canvas);
+        }
       }
     }
   }
-
-  // Takes an event and returns the location clicked within the canvas
-  // element.
-  function getCanvasPointClicked(e, canvas) {
-    var rect = canvas.getBoundingClientRect();
-    return new Point(e.clientX - rect.left, e.clientY - rect.top);
-  }
-
-  var tiles = tile_grids["Volt"];
-  // Get outline of walls in map.
-  var parsed_map = MapParser.parse(tiles);
   
-  var polys = parsed_map.walls.concat(parsed_map.obstacles);
-  // Initialize canvas.
-  var canvas = initCanvasForTiles(tiles);
-
-  drawOutline(polys, canvas);
-});
+  return DrawUtils;
+}));
