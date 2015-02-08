@@ -6,8 +6,10 @@
     <p>Navigation Mesh Example</p>
     <p>This demonstrates the use of NavMesh without depending on a module loader such as RequireJS.</p>
     <p>Click on a location to set start, Shift+click on another tile to set target.</p>
+    <p>Warning, if selected points aren't connected, the page may freeze for several seconds.</p>
+    <span id="redraw"></span>
     <canvas id="c"></canvas>
-    <script src="../../build/navmesh.js"></script>
+    <script src="../../build/navmesh.min.js"></script>
     <script src="../common/bragi-browser.js"></script>
     <script src="../common/tile-grids.js"></script>
     <script src="../common/drawutils.js"></script>
@@ -33,7 +35,13 @@
           } else {
             BRAGI.log("script", "Path not found!");
           }
+          forceRedraw();
         });
+      }
+
+      function forceRedraw() {
+        document.getElementById('redraw').style.display = 'none';
+        document.getElementById('redraw').style.display = 'block';
       }
 
       var tiles = TileGrids["Hurricane2"];
@@ -42,8 +50,8 @@
       var navmesh = new NavMesh(tiles, BRAGI);
 
       // Set names for useful classes.
-      var Point = navmesh.geom.Point;
-      var PolyUtils = navmesh.geom.PolyUtils;
+      var Point = NavMesh.geom.Point;
+      var PolyUtils = NavMesh.geom.PolyUtils;
 
       var canvas = document.getElementById('c');
       DrawUtils.initCanvasForTiles(canvas, tiles);

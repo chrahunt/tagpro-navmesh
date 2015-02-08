@@ -3,16 +3,11 @@ requirejs.config({
     '*': {
       'bragi': '../common/bragi-browser',
       'tile-grids': '../common/tile-grids',
-      //'navmesh': '../../build/navmesh.min',
-      'navmesh': '../../navmesh/navmesh',
+      'navmesh': '../../build/navmesh.min',
       'drawutils': '../common/drawutils'
     }
   },
-  baseUrl: '.',
-  config: {
-    requirejsUrl: '../examples/common/require.js',
-    baseUrl: '.'
-  }
+  baseUrl: '.'
 });
 
 require(['navmesh', 'tile-grids', 'drawutils', 'bragi'],
@@ -26,16 +21,26 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
     return new Point(e.clientX - rect.left, e.clientY - rect.top);
   }
 
+  function forceRedraw() {
+    document.getElementById('redraw').style.display = 'none';
+    document.getElementById('redraw').style.display = 'block';
+  }
+
   function getPathAndDrawUpdate(start, end) {
     var c2d = canvas.getContext('2d');
     c2d.clearRect(0, 0, c2d.canvas.width, c2d.canvas.height);
     DrawUtils.drawOutline(parts, canvas);
 
     navmesh.calculatePath(startPoint, endPoint, function(path) {
-      DrawUtils.drawPoly(PolyUtils.findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
-      DrawUtils.drawPoly(PolyUtils.findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
-      path.unshift(startPoint);
-      DrawUtils.drawPath(path, canvas);
+      if (path) {
+        DrawUtils.drawPoly(PolyUtils.findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
+        DrawUtils.drawPoly(PolyUtils.findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
+        path.unshift(startPoint);
+        DrawUtils.drawPath(path, canvas);
+      } else {
+        Logger.log("script", "Path not found!");
+      }
+      forceRedraw();
     });
   }
 
@@ -43,9 +48,9 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
 
   // Convert and generate navmesh.
   var navmesh = new NavMesh(tiles, Logger);
-  var Point = navmesh.geom.Point;
-  var Poly = navmesh.geom.Poly;
-  var PolyUtils = navmesh.geom.PolyUtils;
+  var Point = NavMesh.geom.Point;
+  var Poly = NavMesh.geom.Poly;
+  var PolyUtils = NavMesh.geom.PolyUtils;
 
   var canvas = document.getElementById('c');
   DrawUtils.initCanvasForTiles(canvas, tiles);
