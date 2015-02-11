@@ -11,7 +11,6 @@ define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './wo
 function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise) {
   var Point = pp.Point;
   var Poly = pp.Poly;
-  var Partition = pp.Partition;
   var Edge = pp.Edge;
   var PolyUtils = pp.PolyUtils;
   
@@ -73,7 +72,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     areas.forEach(function(area) {
       var outline = area.polygon;
       var holes = area.holes;
-      var polys = this._generatePartition(outline, holes);
+      var polys = NavMesh._geometry.convexPartition(outline, holes);
       Array.prototype.push.apply(this.polys, polys);
     }, this);
 
@@ -504,18 +503,60 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Get offsetted and combined obstacles.
     var obstacles = this._offsetDynamicObs(polys);
 
+    // Get convex partition of new obstacles.
+
+
     // Get intersection between polys and the existing map polys.
   };
 
   /**
    * Offsetting function for dynamic obstacles.
+   * @param {Array.<Poly>} obstacles
+   * @param {number} [offset=16]
+   * @return {Array.<Poly>}
    */
   NavMesh.prototype._offsetDynamicObs = function(obstacles, offset) {
     if (typeof offset == 'undefined') offset = 16;
     var scale = 100;
     obstacles = obstacles.map(NavMesh._geometry.convertPolyToClipper);
     ClipperLib.JS.ScaleUpPaths(obstacles, scale);
-    // TODO
+
+    var cpr = NavMesh._geometry.cpr;
+    var co = NavMesh._geometry.co;
+
+    // Merge obstacles together, so obstacles that share a common edge
+    // will be expanded properly.
+    cpr.Clear();
+    cpr.AddPaths(merged_paths, ClipperLib.PolyType.ptSubject, true);
+    var merged_obstacles = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      merged_obstacles,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    // Offset obstacles.
+    var offsetted_paths = new ClipperLib.Paths();
+
+    merged_obstacles.forEach(function(obstacle) {
+      var offsetted_obstacle = new ClipperLib.Paths();
+      co.Clear();
+      co.AddPath(obstacle, ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+      co.Execute(offsetted_obstacle, offset * scale);
+      offsetted_paths.push(offsetted_obstacle[0]);
+    });
+
+    // Merge any newly-overlapping obstacles.
+    cpr.Clear();
+    cpr.AddPaths(offsetted_paths, ClipperLib.PolyType.ptSubject, true);
+    merged_obstacles = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      merged_obstacles,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    return merged_obstacles;
   };
 
   /**
@@ -564,23 +605,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   NavMesh.prototype._offsetAndMerge = function(polys, offset, type) {
     // TODO
   };
-
-  // private
-  // Given a polygon outline and an [optional] array of polygons
-  // representing holes in the polygon, partition the outline. Returns
-  // an array of polygons representing the partitioned space
-  NavMesh.prototype._generatePartition = function(outline, holes) {
-    // Ensure proper vertex order for holes and outline.
-    outline.setOrientation("CCW");
-    holes.forEach(function(e) {
-      e.setOrientation("CW");
-      e.hole = true;
-    });
-
-    var partitioner = new Partition();
-
-    return partitioner.convexPartition(outline, holes);
-  }
 
   /**
    * Represents the outline of a shape along with its holes.
@@ -938,6 +962,43 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
+   * Offset a polygon. The polygon vertices should be in CW order and
+   * the polygon should already be scaled.
+   * @param {CLShape} shape - The contour to inflate inwards.
+   * @param {number} offset - The amount to offset the shape.
+   * @param {integer} [scale=100] - The scale for the operation.
+   * @return {ClipperLib.Paths} - The resulting shape from offsetting.
+   *   If the process of offsetting resulted in the interior shape
+   *   closing completely, then an empty array will be returned. The
+   *   returned shape will still be scaled up, for use in other
+   *   operations.
+   */
+  NavMesh._geometry.offsetExterior = function(shape, offset, scale) {
+    // TODO
+  };
+
+  /**
+   * Generate a convex partition of the provided polygon, excluding
+   * areas given by the holes.
+   * @private
+   * @param {Poly} outline - The polygon outline of the area to
+   *   partition.
+   * @param {Array.<Poly>} holes - Holes in the polygon.
+   * @return {Array.<Poly>} - Polygons representing the partitioned
+   *   space.
+   */
+  NavMesh._geometry.convexPartition = function(outline, holes) {
+    // Ensure proper vertex order for holes and outline.
+    outline.setOrientation("CCW");
+    holes.forEach(function(e) {
+      e.setOrientation("CW");
+      e.hole = true;
+    });
+    
+    return PolyUtils.convexPartition(outline, holes);
+  }
+
+  /**
    * A point in ClipperLib is just an object with properties
    * X and Y corresponding to a point.
    * @typedef CLPoint
@@ -1001,8 +1062,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     shape.push({X: bounds.right, Y: bounds.top});
     return shape;
   }
-
-
 
   // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round
   ;(function() {

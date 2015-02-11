@@ -175,9 +175,7 @@ function(poly2tri) {
     this.numpoints = 0;
     if (points) {
       this.numpoints = points.length;
-      this.points = points.slice().map(function(point) {
-        return point.clone();
-      });
+      this.points = points.slice();
     }
   }
   exports.Poly = Poly;
@@ -385,22 +383,83 @@ function(poly2tri) {
     }
   };
 
-  //// PARTITION ////
-  Partition = function() {
-    this.drawCallback = null;
-  };
-  exports.Partition = Partition;
+  var PolyUtils = {};
+  exports.PolyUtils = PolyUtils;
 
-  Partition.prototype.convertTrianglesToPolys = function(triangles) {
-    var polys = triangles.map(function(triangle) {
-      var poly = new Poly();
-      poly.init(3);
-      triangle.getPoints().forEach(function(p, i) {
-        poly.setPoint(i, new Point(p.x, p.y));
-      });
-      return poly;
-    });
-    return polys;
+  PolyUtils.isConvex = function(p1, p2, p3) {
+    var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
+    return (tmp > 0);
+  }
+
+  /**
+   * Given an array of polygons, returns the one that contains the point.
+   * If no polygon is found, null is returned.
+   * @param {Point} p - The point to find the polygon for.
+   * @param {Array.<Poly>} polys - The polygons to search for the point.
+   * @return {?Polygon} - The polygon containing the point.
+   */
+  PolyUtils.findPolyForPoint = function(p, polys) {
+    var i, poly;
+    for (i in polys) {
+      poly = polys[i];
+      if (poly.containsPoint(p)) {
+        return poly;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Holds the properties of a collision, if one occurred.
+   * @typedef Collision
+   * @type {object}
+   * @property {boolean} collides - Whether there is a collision.
+   * @property {boolean} inside - Whether one object is inside the other.
+   * @property {?Point} point - The point of collision, if collision
+   *   occurs, and if `inside` is false.
+   * @property {?Point} normal - A unit vector normal to the point
+   *   of collision, if it occurs and if `inside` is false.
+   */
+  /**
+   * If the ray intersects the circle, the distance to the intersection
+   * along the ray is returned, otherwise false is returned.
+   * @param {Point} p - The start of the ray.
+   * @param {Point} ray - Unit vector extending from `p`.
+   * @param {Point} c - The center of the circle for the object being
+   *   checked for intersection.
+   * @param {number} radius - The radius of the circle.
+   * @return {Collision} - The collision information.
+   */
+  PolyUtils.lineCircleIntersection = function(p, ray, c, radius) {
+    var collision = {
+      collides: false,
+      inside: false,
+      point: null,
+      normal: null
+    }
+    var vpc = c.sub(p);
+
+    if (vpc.len() <= radius) {
+      // Point is inside obstacle.
+      collision.collides = true;
+      collision.inside = (vpc.len() !== radius);
+    } else if (ray.dot(vpc) >= 0) {
+      // Circle is ahead of point.
+      // Projection of center point onto ray.
+      var pc = p.add(ray.mul(ray.dot(vpc)));
+      // Length from c to its projection on the ray.
+      var len_c_pc = c.sub(pc).len();
+
+      if (len_c_pc <= radius) {
+        collision.collides = true;
+
+        // Distance from projected point to intersection.
+        var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
+        collision.point = pc.sub(ray.mul(len_intersection));
+        collision.normal = collision.point.sub(c).normalize();
+      }
+    }
+    return collision;
   }
 
   /**
@@ -417,7 +476,7 @@ function(poly2tri) {
    * @return {Array.<Poly>} - The set of polygons defining the
    *   partition of the provided polygon.
    */
-  Partition.prototype.convexPartition = function(poly, holes, minArea) {
+  PolyUtils.convexPartition = function(poly, holes, minArea) {
     if (typeof holes == 'undefined') holes = false;
     if (typeof minArea == 'undefined') minArea = 5;
 
@@ -425,7 +484,7 @@ function(poly2tri) {
     var parts = new Array();
 
     // Check if poly is already convex only if there are no holes.
-    if (!holes) {
+    if (!holes || holes.length == 0) {
       var reflex = false;
       // Check if already convex.
       for (var i = 0; i < poly.numpoints; i++) {
@@ -443,17 +502,11 @@ function(poly2tri) {
     }
 
     // Convert polygon into format required by poly2tri.
-    var contour = poly.points.map(function(p) {
-      return new poly2tri.Point(p.x, p.y);
-    });
+    var contour = PolyUtils._convertPolyToP2TPoly(poly);
 
     if (holes) {
       // Convert holes into format required by poly2tri.
-      holes = holes.map(function(poly) {
-        return poly.points.map(function(p) {
-          return new poly2tri.Point(p.x, p.y);
-        });
-      });
+      holes = holes.map(PolyUtils._convertPolyToP2TPoly);
     }
 
     var swctx = new poly2tri.SweepContext(contour);
@@ -464,7 +517,7 @@ function(poly2tri) {
     
     // Convert poly2tri triangles back into polygons and filter out the
     // ones too small to be relevant.
-    triangles = this.convertTrianglesToPolys(triangles).filter(function(poly) {
+    triangles = triangles.map(PolyUtils._convertP2TPolyToPoly).filter(function(poly) {
       return poly.getArea() >= minArea;
     });
 
@@ -536,83 +589,41 @@ function(poly2tri) {
     return triangles;
   }
 
-  var PolyUtils = {};
-
-  PolyUtils.isConvex = function(p1, p2, p3) {
-    var tmp = (p3.y - p1.y) * (p2.x - p1.x) - (p3.x - p1.x) * (p2.y - p1.y);
-    return (tmp > 0);
+  /**
+   * The Point class used by poly2tri.
+   * @typedef P2TPoint
+   */
+  /**
+   * A polygon for use with poly2tri.
+   * @typedef P2TPoly
+   * @type {Array.<P2TPoint>}
+   */
+  /**
+   * Convert a polygon into format required by poly2tri.
+   * @private
+   * @param {Poly} poly - The polygon to convert.
+   * @return {P2TPoly} - The converted polygon.
+   */
+  PolyUtils._convertPolyToP2TPoly = function(poly) {
+    return poly.points.map(function(p) {
+      return new poly2tri.Point(p.x, p.y);
+    });
   }
 
   /**
-   * Given an array of polygons, returns the one that contains the point.
-   * If no polygon is found, null is returned.
-   * @param {Point} p - The point to find the polygon for.
-   * @param {Array.<Poly>} polys - The polygons to search for the point.
-   * @return {?Polygon} - The polygon containing the point.
+   * Convert a polygon/triangle returned from poly2tri back into a
+   * polygon.
+   * @private
+   * @param {P2TPoly} p2tpoly - The polygon to convert.
+   * @return {Poly} - The converted polygon.
    */
-  PolyUtils.findPolyForPoint = function(p, polys) {
-    var i, poly;
-    for (i in polys) {
-      poly = polys[i];
-      if (poly.containsPoint(p)) {
-        return poly;
-      }
-    }
-    return null;
+  PolyUtils._convertP2TPolyToPoly = function(p2tpoly) {
+    var points = p2tpoly.getPoints().map(function(p) {
+      return new Point(p.x, p.y);
+    });
+
+    return new Poly(points);
   }
-  /**
-   * Holds the properties of a collision, if one occurred.
-   * @typedef Collision
-   * @type {object}
-   * @property {boolean} collides - Whether there is a collision.
-   * @property {boolean} inside - Whether one object is inside the other.
-   * @property {?Point} point - The point of collision, if collision
-   *   occurs, and if `inside` is false.
-   * @property {?Point} normal - A unit vector normal to the point
-   *   of collision, if it occurs and if `inside` is false.
-   */
-  /**
-   * If the ray intersects the circle, the distance to the intersection
-   * along the ray is returned, otherwise false is returned.
-   * @param {Point} p - The start of the ray.
-   * @param {Point} ray - Unit vector extending from `p`.
-   * @param {Point} c - The center of the circle for the object being
-   *   checked for intersection.
-   * @param {number} radius - The radius of the circle.
-   * @return {Collision} - The collision information.
-   */
-  PolyUtils.lineCircleIntersection = function(p, ray, c, radius) {
-    var collision = {
-      collides: false,
-      inside: false,
-      point: null,
-      normal: null
-    }
-    var vpc = c.sub(p);
-
-    if (vpc.len() <= radius) {
-      // Point is inside obstacle.
-      collision.collides = true;
-      collision.inside = (vpc.len() !== radius);
-    } else if (ray.dot(vpc) >= 0) {
-      // Circle is ahead of point.
-      // Projection of center point onto ray.
-      var pc = p.add(ray.mul(ray.dot(vpc)));
-      // Length from c to its projection on the ray.
-      var len_c_pc = c.sub(pc).len();
-
-      if (len_c_pc <= radius) {
-        collision.collides = true;
-
-        // Distance from projected point to intersection.
-        var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
-        collision.point = pc.sub(ray.mul(len_intersection));
-        collision.normal = collision.point.sub(c).normalize();
-      }
-    }
-    return collision;
-  }
-  exports.PolyUtils = PolyUtils;
 
   return exports;
 });
