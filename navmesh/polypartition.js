@@ -3,7 +3,7 @@ function(poly2tri) {
   // Adapted/copied from https://code.google.com/p/polypartition/
   var exports = {};
   /*
-   * A point represents a vertex in a 2d environment.
+   * A point can represent a vertex in a 2d environment or a vector.
    */
   Point = function(x, y) {
     this.x = x;
@@ -11,6 +11,26 @@ function(poly2tri) {
   }
   exports.Point = Point;
 
+  /**
+   * Convert a point-like object into a point.
+   * @param {PointLike} p - The point-like object to convert.
+   * @return {Point} - The new point representing the point-like
+   *   object.
+   */
+  Point.fromPointLike = function(p) {
+    return new Point(p.x, p.y);
+  }
+
+  /**
+   * String method for point-like objects.
+   * @param {PointLike} p - The point-like object to convert.
+   * @return {Point} - The new point representing the point-like
+   *   object.
+   */
+  Point.toString = function(p) {
+    return "x" + p.x + "y" + p.y;
+  }
+  
   /**
    * Takes a point or scalar and adds slotwise in the case of another
    * point, or to each parameter in the case of a scalar.
@@ -96,9 +116,22 @@ function(poly2tri) {
     return 'x' + this.x + 'y' + this.y;
   }
 
+  /**
+   * Return a copy of the point.
+   * @return {Point} - The new point.
+   */
+  Point.prototype.clone = function() {
+    return new Point(this.x, this.y);
+  };
+
   //// EDGE ////
-  // Edges are used to represent the border between two adjacent
-  // polygons.
+  /**
+   * Edges are used to represent the border between two adjacent
+   * polygons.
+   * @constructor
+   * @param {Point} p1 - The first point of the edge.
+   * @param {Point} p2 - The second point of the edge.
+   */
   Edge = function(p1, p2) {
     this.p1 = p1;
     this.p2 = p2;
@@ -114,7 +147,12 @@ function(poly2tri) {
     return (f - b) * (c - a) > (d - b) * (e - a);
   }
 
-  // from http://stackoverflow.com/a/16725715
+  /**
+   * from http://stackoverflow.com/a/16725715
+   * Checks whether this edge intersects the provided edge.
+   * @param {Edge} edge - The edge to check intersection for.
+   * @return {boolean} - Whether or not the edges intersect.
+   */
   Edge.prototype.intersects = function(edge) {
     var q1 = edge.p1, q2 = edge.p2;
     if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
@@ -123,10 +161,24 @@ function(poly2tri) {
 
 
   //// POLY ////
-  Poly = function() {
+  /**
+   * Polygon class.
+   * Can be initialized with an array of points.
+   * @constructor
+   * @param {Array.<Point>} [points] - The points to use to initialize
+   *   the poly.
+   */
+  Poly = function(points) {
+    if (typeof points == 'undefined') points = false;
     this.hole = false;
     this.points = null;
     this.numpoints = 0;
+    if (points) {
+      this.numpoints = points.length;
+      this.points = points.slice().map(function(point) {
+        return point.clone();
+      });
+    }
   }
   exports.Poly = Poly;
 
@@ -274,6 +326,64 @@ function(poly2tri) {
     }
     return result;
   }
+
+  /**
+   * Clone the given polygon into a new polygon.
+   * @return {Poly} - A clone of the polygon.
+   */
+  Poly.prototype.clone = function() {
+    return new Poly(this.points.slice().map(function(point) {
+      return point.clone();
+    }));
+  };
+
+  /**
+   * Translate a polygon along a given vector.
+   * @param {Point} vec - The vector along which to translate the
+   *   polygon.
+   * @return {Poly} - The translated polygon.
+   */
+  Poly.prototype.translate = function(vec) {
+    return new Poly(this.points.map(function(point) {
+      return point.add(vec);
+    }));
+  };
+
+  /**
+   * Returns an array of edges representing the polygon.
+   * @return {Array.<Edge>} - The edges of the polygon.
+   */
+  Poly.prototype.edges = function() {
+    if (!this.hasOwnProperty("edges")) {
+      this.edges = this.points.map(function(point, i) {
+        return new Edge(point, this.points[this.getNextI(i)]);
+      });
+    }
+    return this.edges;
+  };
+
+  /**
+   * Naive check if other poly intersects this one, assuming both convex.
+   * @param {Poly} poly
+   * @return {boolean} - Whether the polygons intersect.
+   */
+  Poly.prototype.intersects = function(poly) {
+    var inside = poly.points.some(function(p) {
+      return this.containsPoint(p);
+    }, this);
+    if (inside) {
+      return true;
+    } else {
+      var ownEdges = this.edges();
+      var otherEdges = poly.edges();
+      var intersect = ownEdges.some(function(ownEdge) {
+        return otherEdges.some(function(otherEdge) {
+          return ownEdge.intersects(otherEdge);
+        });
+      });
+      return intersects;
+    }
+  };
 
   //// PARTITION ////
   Partition = function() {

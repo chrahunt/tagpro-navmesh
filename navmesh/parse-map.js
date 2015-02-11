@@ -353,38 +353,6 @@ function(  ActionValues,      pp) {
     }
   }
 
-  /**
-   * Pre-processes the map to remove external diagonal tiles. This
-   * side-steps an issue where the system is unable to parse maps
-   * that have diagonal tiles on the outside of the map outline.
-   * @param {Array.<Array.<Cell>>} arr - The 2d array output of 
-   * @return {Array.<Array.<Cell>>} - The
-   */
-  function preprocess(arr) {
-    function identifier(cell) {
-      var str = cell[0] + "-" + cell[1] + "-" + cell[2] + "-" + cell[3];
-      return str;
-    }
-    var bad_arrangements = new Set();
-    bad_arrangements.add(identifier([1, 1, 1.4, 1]));
-    bad_arrangements.add(identifier([1, 1, 1, 1.3]));
-    bad_arrangements.add(identifier([1, 1.1, 1, 1]));
-    bad_arrangements.add(identifier([1.2, 1, 1, 1]));
-    for (var i = 0; i < (arr.length - 1); i++) {
-      for (var j = 0; j < (arr[0].length - 1); j++) {
-        var cell = [arr[i][j], arr[i][j+1], arr[i+1][j+1], arr[i+1][j]];
-        // Check if in bad arrangements.
-        if (bad_arrangements.has(identifier(cell))) {
-          arr[i][j] = 1;
-          arr[i][j+1] = 1;
-          arr[i+1][j+1] = 1;
-          arr[i+1][j] = 1;
-        }
-      }
-    }
-    return arr;
-  }
-
   // Return whether there should be a vertex at the given location and
   // which location to go next, if any.
   // Value returned is an object with properties 'v' and 'loc'. 'v' is a boolean
@@ -455,11 +423,12 @@ function(  ActionValues,      pp) {
    * Returns an array of the array locations of the spikes contained
    * in the map tiles, replacing those array locations in the original
    * map tiles with 2, which corresponds to a floor tile.
+   * @private
    * @param {MapTiles} tiles - The map tiles.
    * @return {Array.<ArrayLoc>} - The array of locations that held
    *   spike tiles.
    */
-  function extractSpikes(tiles) {
+  MapParser.extractSpikes = function(tiles) {
     var spike_locations = [];
     tiles.forEach(function(row, row_n) {
       row.forEach(function(cell_value, index, row) {
@@ -470,6 +439,62 @@ function(  ActionValues,      pp) {
       });
     });
     return spike_locations;
+  }
+
+  var Obstacle = function(type, ids) {
+    this.type = type;
+    this.vals = [];
+    this.info = {};
+    ids.forEach(function(id) {
+      if (typeof id == "number") {
+        this.vals.push(id);
+        this.info[id] = this.type;
+      } else {
+        this.vals.push(id.num);
+        this.info[id] = id.name;
+      }
+    }, this);
+  }
+
+  Obstacle.prototype.describes = function(val) {
+    if(this.vals.indexOf(Math.floor(+val)) !== -1) {
+      return (this.info[+val] || this.info[Math.floor(+val)]);
+    } else {
+      return false;
+    }
+  };
+
+  var Obstacles = [
+    new Obstacle("bomb", [10, 10.1]),
+    new Obstacle("boost",
+      [5, 5.1, {num: 14, name: "redboost"}, {num: 15, name: "blueboost"}]),
+    new Obstacle("gate",
+      [9, {num: 9.1, name: "greengate"}, {num: 9.2, name: "redgate"},
+      {num: 9.3, name: "bluegate"}])
+  ];
+
+  MapParser.extractDynamicObstacles = function(tiles) {
+    var dynamic_obstacles = [];
+    tiles.forEach(function(row, x) {
+      row.forEach(function(tile, y) {
+        Obstacles.some(function(obstacle_type) {
+          var dynamic_obstacle = obstacle_type.describes(tile)
+          if (dynamic_obstacle) {
+            dynamic_obstacles.push({
+              type: dynamic_obstacle,
+              x: x,
+              y: y,
+              v: tile
+            });
+            tiles[x][y] = 0;
+            return true;
+          } else {
+            return false;
+          }
+        });
+      });
+    });
+    return dynamic_obstacles;
   }
 
   /**
@@ -492,7 +517,9 @@ function(  ActionValues,      pp) {
 
     // Returns a list of the spike locations and removes them from
     // the tiles.
-    var spike_locations = extractSpikes(tiles);
+    var spike_locations = MapParser.extractSpikes(tiles);
+
+    var dynamic_obstacles = MapParser.extractDynamicObstacles(tiles);
 
     // Pad tiles with a ring of wall tiles, to ensure the map is
     // closed.
@@ -511,13 +538,9 @@ function(  ActionValues,      pp) {
     // Get rid of tile values except those for the walls.
     var threshold_tiles = map2d(tiles, isBadCell);
 
-    // Preprocess tiles to get rid of diagonal tiles that cause problems
-    // outside bounds of map.
-    var preprocessed_tiles = threshold_tiles;//preprocess(threshold_tiles);
-
     // Generate contour grid, essentially a grid whose cells are at the
     // intersection of every set of 4 cells in the original map.
-    var contour_grid_2 = generateContourGrid(preprocessed_tiles);
+    var contour_grid_2 = generateContourGrid(threshold_tiles);
 
     // Get tile vertex and actions for each cell in contour grid.
     var tile_actions = map2d(contour_grid_2, getAction);
@@ -534,13 +557,14 @@ function(  ActionValues,      pp) {
     var converted_shapes = convertShapesToCoords(actual_shapes);
 
     // Get spike-approximating shapes and add to list.
-    var obstacles = spike_locations.map(function(spike) {
+    var static_obstacles = spike_locations.map(function(spike) {
       return getSpikeShape(getCoordinates(spike));
     });
 
     return {
       walls: this.convertShapesToPolys(converted_shapes),
-      obstacles: this.convertShapesToPolys(obstacles)
+      static_obstacles: this.convertShapesToPolys(static_obstacles),
+      dynamic_obstacles: dynamic_obstacles
     };
   }
 

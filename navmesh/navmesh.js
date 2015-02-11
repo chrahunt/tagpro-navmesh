@@ -38,6 +38,10 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       throw "Map parsing failed!";
     }
 
+    // Track map state.
+    this.map = JSON.parse(JSON.stringify(map));
+
+    // Initialize navmesh.
     this._init(polys);
   };
 
@@ -55,12 +59,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Save original parsed map polys.
     this.parsedMap = parsedMap;
 
-    // Perform initial separation of any slightly overlapping polygons.
-    this._separatePolys(parsedMap.walls);
-    this._separatePolys(parsedMap.obstacles);
+    // Static objects relative to the navmesh.
+    var navigation_static_objects = {
+      walls: parsedMap.walls,
+      obstacles: parsedMap.static_obstacles
+    }
+    var navigation_dynamic_objects = parsedMap.dynamic_obstacles;
 
     // Offset polys from side so they represent traversable area.
-    var areas = this._offsetPolys(parsedMap);
+    var areas = this._offsetPolys(navigation_static_objects);
 
     this.polys = [];
     areas.forEach(function(area) {
@@ -73,6 +80,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     if (!this.worker) {
       this.pathfinder = new Pathfinder(this.polys);
     }
+
+    this._setupDynamicObstacles(navigation_dynamic_objects);
 
     // Keep track of original polygons, generate their edges in advance.
     //this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
@@ -88,6 +97,121 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     }, this);
     this.initialized = true;
   }
+
+  /**
+   * Set up mesh-dynamic obstacles.
+   */
+  NavMesh.prototype._setupDynamicObstacles = function(obstacles) {
+    // List of ids for impassable tiles.
+    this.impassable = [];
+    // Polygons defining obstacles.
+    this.obstacleDefinitions = {};
+    // Relation between ids and obstacles.
+    this.idToObstacles = {};
+
+    // Add polygons describing dynamic obstacles.
+    this.addObstaclePoly("bomb", this._getApproximateCircle(15));
+    this.addObstaclePoly("boost", this._getApproximateCircle(15));
+    this.addObstaclePoly("portal", this._getApproximateCircle(15));
+    this.addObstaclePoly("gate", this._getSquare(20));
+
+    // Add id<->type associations.
+    this.setObstacleType([10, 10.1], "bomb");
+    this.setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
+    this.setObstacleType([9, 9.1, 9.2, 9.3], "gate");
+
+    // Set up obstacle state container. Holds whether position is
+    // passable or not. Referenced using array location.
+    this.obstacle_state = {};
+
+    // Location of dynamic obstacles.
+    this.dynamic_obstacle_locations = [];
+
+    // Container to hold initial obstacle states.
+    var initial_states = [];
+    obstacles.forEach(function(obstacle) {
+      this.obstacle_state[Point.toString(obstacle)] = false;
+      this.dynamic_obstacle_locations.push(Point.fromPointLike(obstacle));
+      initial_states.push(obstacle);
+    }, this);
+  };
+
+  /**
+   * Get a polygonal approximation of a circle of a given radius
+   * centered at the provided point. Vertices of polygon are in CW
+   * order.
+   * @param {number} radius - The radius for the polygon.
+   * @param {Point} [point] - The point at which to center the polygon.
+   *   If a point is not provided then the polygon is centered at the
+   *   origin.
+   * @return {Poly} - The approximated circle.
+   */
+  NavMesh.prototype._getApproximateCircle = function(radius, point) {
+    if(!this.hasOwnProperty("approximations")) {
+      this.approximations = {};
+      this.approximations.circle = {};
+    }
+    if (!this.approximations.circle[radius]) {
+      var x, y;
+      if (point) {
+        x = point.x;
+        y = point.y;
+      } else {
+        x = 0;
+        y = 0;
+      }
+      var offset = radius * Math.tan(Math.PI / 8);
+      offset = Math.round10(offset, -1);
+      var poly = new Poly([
+        new Point(x - radius, y - offset),
+        new Point(x - radius, y + offset),
+        new Point(x - offset, y + radius),
+        new Point(x + offset, y + radius),
+        new Point(x + radius, y + offset),
+        new Point(x + radius, y - offset),
+        new Point(x + offset, y - radius),
+        new Point(x - offset, y - radius)
+      ]);
+      this.approximations.circle[radius] = poly;
+    }
+    return this.approximations.circle[radius].clone();
+  };
+
+  /**
+   * Returns a square with side length given by double the provided
+   * radius, centered at the origin. Vertices of polygon are in CW
+   * order.
+   * @private
+   * @param {number} radius - The length of half of one side.
+   * @return {Poly} - The constructed square.
+   */
+  NavMesh.prototype._getSquare = function(radius) {
+    var poly = new Poly([
+      new Point(-radius, radius),
+      new Point(radius, radius),
+      new Point(radius, -radius),
+      new Point(-radius, -radius)
+    ]);
+    return poly;
+  };
+
+  /**
+   * Add poly definition for obstacle type.
+   * edges should be relative to center of tile.
+   */
+  NavMesh.prototype.addObstaclePoly = function(name, poly) {
+    this.obstacleDefinitions[name] = poly;
+  };
+
+  /**
+   * Retrieve the polygon for a given obstacle id.
+   * @private
+   * @param {number} id - The id to retrieve the obstacle polygon for.
+   * @return {Poly} - The polygon representing the obstacle.
+   */
+  NavMesh.prototype._getObstaclePoly = function(id) {
+    return this.obstacleDefinitions[this.idToObstacles[id]].clone();
+  };
 
   /**
    * Ensure that passed function is executed when the navmesh has been
@@ -153,6 +277,294 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     return !blocked;
   }
 
+  /**
+   * Set the relationship between specific tile identifiers and the
+   * polygons representing the shape of the obstacle they correspond
+   * to.
+   * @param {Array.<number>} ids - The tile ids to set as impassable.
+   * @param {string} obstacle - The identifier for the polygon for the
+   *   obstacles (already passed to addObstaclePoly).
+   */
+  NavMesh.prototype.setObstacleType = function(ids, type) {
+    ids.forEach(function(id) {
+      this.idToObstacles[id] = type;
+    }, this);
+  };
+
+  /**
+   * Set specific tile identifiers as impassable to the agent.
+   * @param {Array.<number>} ids - The tile ids to set as impassable.
+   * @param {string} obstacle - The identifier for the polygon for the
+   *   obstacles (already passed to addObstaclePoly).
+   */
+  NavMesh.prototype.setImpassable = function(ids) {
+    // Remove ids already set as impassable.
+    ids = ids.filter(function(id) {
+      return this._isPassable(id);
+    }, this);
+
+    var updates = [];
+    // Check if any of the dynamic tiles have the values passed.
+    this.dynamic_obstacle_locations.forEach(function(loc) {
+      var idx = ids.indexOf(this.map[loc.x][loc.y]);
+      if (idx !== -1) {
+        updates.push({
+          x: loc.x,
+          y: loc.y,
+          v: ids[idx]
+        });
+      }
+    }, this);
+
+    // Add to list of impassable tiles.
+    Array.prototype.push.apply(this.impassable, ids);
+
+    if (updates.length > 0) {
+      this.mapUpdate(updates);
+    }
+  };
+
+  /**
+   * Remove tile identifiers from set of impassable tile types.
+   * @param {Array.<number>} ids - The tile ids to set as traversable.
+   */
+  NavMesh.prototype.removeImpassable = function(ids) {
+    // Remove ids not set as impassable.
+    ids = ids.filter(function(id) {
+      return !this._isPassable(id);
+    }, this);
+
+    var updates = [];
+    // Check if any of the dynamic tiles have the values passed.
+    this.dynamic_obstacle_locations.forEach(function(loc) {
+      var idx = ids.indexOf(this.map[loc.x][loc.y]);
+      if (idx !== -1) {
+        updates.push({
+          x: loc.x,
+          y: loc.y,
+          v: ids[idx]
+        });
+      }
+    }, this);
+
+    // Remove from list of impassable tiles.
+    this.impassable = this.impassable.filter(function(id) {
+      return ids.indexOf(id) == -1;
+    })
+
+    if (updates.length > 0) {
+      this.mapUpdate(updates);
+    }
+  };
+
+  /**
+   * @typedef TileUpdate
+   * @type {object}
+   * @property {integer} x - The x index of the tile to update in the
+   *   original map array.
+   * @property {integer} y - The y index of the tile to update in the
+   *   original map array.
+   * @property {(number|string)} v - The new value for the tile.
+   */
+  /**
+   * Takes an array of tiles and updates the navigation mesh to reflect
+   * the newly traversable area.
+   * @param {Array.<TileUpdate>} - Information on the tiles updates.
+   */
+  NavMesh.prototype.mapUpdate = function(data) {
+    // Check the passed values.
+    var error = false;
+    // Hold updated tile locations.
+    var updates = [];
+    data.forEach(function(update) {
+      // Update internal map state.
+      this.map[update.x][update.y] = update.v;
+      if (error) return;
+      var tileId = update.v;
+      var locId = Point.toString(update);
+      var passable = this._isPassable(tileId);
+      var currentLocState = this.obstacle_state[locId];
+      // All dynamic tile locations should be defined.
+      if (typeof currentLocState == 'undefined') {
+        error = true;
+        this.logger.log("navmesh:error",
+          "Dynamic obstacle found but not already initialized.");
+        return;
+      } else {
+        if (passable == currentLocState) {
+          // Nothing to do here.
+          return;
+        } else {
+          this.obstacle_state[locId] = passable;
+          // Track whether update is making the tiles passable or
+          // impassable.
+          update.passable = passable;
+          updates.push(update);
+        }
+      }
+    }, this);
+
+    if (error) {
+      return;
+    }
+
+    // Check that we have updates to carry out.
+    if (updates.length > 0) {
+      // See whether this is an update from passable to impassable
+      // or vice-versa.
+      var passable = updates[0].passable;
+
+      // Ensure that they all have the same update type.
+      updates.forEach(function(update) {
+        if (update.passable !== passable) {
+          error = true;
+        }
+      }, this);
+      if (error) {
+        this.logger.log("navmesh:error",
+          "Not all updates of same type.");
+        return;
+      }
+      // Passable/impassable-specific update functions.
+      if (passable) {
+        this._passableUpdate(updates);
+      } else {
+        this._impassableUpdate(updates);
+      }
+    }
+  };
+
+  /**
+   * Check whether the provided id corresponds to a passable tile.
+   * @return {boolean} - Whether the id is for a passable tile.
+   */
+  NavMesh.prototype._isPassable = function(id) {
+    // Check if in list of impassable tiles.
+    return this.impassable.indexOf(id) == -1;
+  };
+
+  /**
+   * Get a polygon corresponding to the dimensions and location of the
+   * provided tile update.
+   * @param {TileUpdate} tile - The tile update information.
+   * @return {Poly} - The polygon representing the tile.
+   */
+  NavMesh.prototype._getTilePoly = function(tile) {
+    // Get the base poly from a list of such things by tile id
+    // then translate according to the array location.
+    var id = tile.v;
+    var p = this._getWorldCoord(tile);
+    var poly = this._getObstaclePoly(id).translate(p);
+    return poly;
+  };
+
+  /**
+   * Represents a point in space, doesn't necessarily need to be a
+   * `Point` object.
+   * @typedef PointLike
+   * @type {object}
+   * @property {number} x - The x value for the point.
+   * @property {number} y - The y value for the point.
+   */
+  /**
+   * Given an array location, return the world coordinate representing
+   * the center point of the tile at that array location.
+   * @param {PointLike} arrayLoc - The location in the map for the point.
+   * @returm {Point} - The coordinates for the center of the location.
+   */
+  NavMesh.prototype._getWorldCoord = function(arrayLoc) {
+    var TILE_WIDTH = 40;
+    return new Point(
+      arrayLoc.x * TILE_WIDTH + (TILE_WIDTH / 2),
+      arrayLoc.y * TILE_WIDTH + (TILE_WIDTH / 2)
+    );
+  };
+
+  /**
+   * Carry out the navmesh update for impassable dynamic obstacles that
+   * have been removed from the navmesh.
+   * @param {Array.<TileUpdate>} updates - The tile update information.
+   */
+  NavMesh.prototype._passableUpdate = function(updates) {
+    // TODO
+  };
+
+  /**
+   * Carry out the navmesh update for impassable dynamic obstacles that
+   * have been added to the navmesh.
+   * @param {Array.<TileUpdate>} updates - The tile update information.
+   */
+  NavMesh.prototype._impassableUpdate = function(updates) {
+    // TODO
+    // Get polygons defining these obstacles.
+    var polys = updates.map(function(update) {
+      return this._getTilePoly(update);
+    }, this);
+
+    // Get offsetted and combined obstacles.
+    var obstacles = this._offsetDynamicObs(polys);
+
+    // Get intersection between polys and the existing map polys.
+  };
+
+  /**
+   * Offsetting function for dynamic obstacles.
+   */
+  NavMesh.prototype._offsetDynamicObs = function(obstacles, offset) {
+    if (typeof offset == 'undefined') offset = 16;
+    var scale = 100;
+    obstacles = obstacles.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(obstacles, scale);
+    // TODO
+  };
+
+  /**
+   * Get the polygons impacted by the addition of new obstacles.
+   * @param {Array.<Poly>} obstacles - The obstacles to get the
+   *   intersection of. Assumed to be convex.
+   * @return {Array.<Poly>} - The affected polys.
+   */
+  NavMesh.prototype._getIntersectedPolys = function(obstacles) {
+    // TODO
+
+  };
+
+  /**
+   * Retrieve the polygons bordering obstacles to be removed.
+   * @param {Array.<Poly>} - The obstacles to be removed.
+   * @return {IntersectionResult} - The affected polys.
+   */
+  NavMesh.prototype._getBorderedPolys = function(obstacles) {
+    // TODO
+  };
+
+  /**
+   * Get the impassable tiles bordering updated passable tiles.
+   * @param {Array.<TileUpdate>} tiles - The updated passable tiles.
+   * @return {Array.<ArrayLoc>} - The new array locations.
+   */
+  NavMesh.prototype._getBorderedTiles = function(tiles) {
+    // TODO
+  };
+
+  /**
+   * Do the mesh update.
+   */
+  NavMesh.prototype._updateMesh = function() {
+    // TODO
+  };
+
+  /**
+   * Take the provided polys, offset them, and merge them.
+   * @param {Array.<Poly>} polys - The polygons to offset and merge.
+   * @param {number} offset - The amount to offset the polygons.
+   * @return {Array.<MapArea>} - The result of the offsetting and merging
+   *   operation.
+   */
+  NavMesh.prototype._offsetAndMerge = function(polys, offset, type) {
+    // TODO
+  };
+
   // private
   // Given a polygon outline and an [optional] array of polygons
   // representing holes in the polygon, partition the outline. Returns
@@ -171,67 +583,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   }
 
   /**
-   * Takes an array of polygons that overlap themselves and others
-   * at discrete corner points and separate those overlapping corners
-   * slightly so the polygons are suitable for triangulation by
-   * poly2tri.js. This changes the Poly objects in the array.
-   * @private
-   * @param {Array.<Poly>} polys - The polygons to separate.
-   * @param {number} [offset=1] - The number of units the vertices
-   *   should be moved away from each other.
-   */
-  NavMesh.prototype._separatePolys = function(polys, offset) {
-    offset = offset || 1;
-    var discovered = {};
-    var dupes = {};
-    // Offset to use in calculation.
-    // Find duplicates.
-    for (var s1 = 0; s1 < polys.length; s1++) {
-      var poly = polys[s1];
-      for (var i = 0; i < poly.numpoints; i++) {
-        var point = poly.points[i].toString();
-        if (!discovered.hasOwnProperty(point)) {
-          discovered[point] = true;
-        } else {
-          dupes[point] = true;
-        }
-      }
-    }
-
-    // Get duplicate points.
-    var dupe_points = [];
-    var dupe;
-    for (var s1 = 0; s1 < polys.length; s1++) {
-      var poly = polys[s1];
-      for (var i = 0; i < poly.numpoints; i++) {
-        var point = poly.points[i];
-        if (dupes.hasOwnProperty(point.toString())) {
-          dupe = [point, i, poly];
-          dupe_points.push(dupe);
-        }
-      }
-    }
-
-    // Sort elements in descending order based on their indices to
-    // prevent future indices from becoming invalid when changes are made.
-    dupe_points.sort(function(a, b) {
-      return b[1] - a[1]
-    })
-    // Edit duplicates.
-    var prev, next, point, index, p1, p2;
-    dupe_points.forEach(function(e, i, ary) {
-      point = e[0], index = e[1], poly = e[2];
-      prev = poly.points[poly.getPrevI(index)];
-      next = poly.points[poly.getNextI(index)];
-      p1 = point.add(prev.sub(point).normalize().mul(offset));
-      p2 = point.add(next.sub(point).normalize().mul(offset));
-      // Insert new points.
-      poly.points.splice(index, 1, p1, p2);
-      poly.update();
-    });
-  }
-
-  /**
    * Represents the outline of a shape along with its holes.
    * @typedef MapArea
    * @type {object}
@@ -239,7 +590,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   the shape.
    * @property {Array.<Poly>} holes - The holes of the shape.
    */
-
   /**
    * Offset the polygons such that there is a `offset` unit buffer
    * between the sides of the outline and around the obstacles. This
@@ -254,7 +604,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @return {Array.<MapArea>} - The shapes defining the polygons after
    *   offsetting and merging.
    */
-  NavMesh.prototype._offsetPolys = function(parsedMap, offset) {
+  NavMesh.prototype._offsetPolys = function(static_objects, offset) {
     // ~= ball radius / 2
     if (typeof offset == 'undefined') offset = 16;
 
@@ -262,7 +612,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // to the interior wall outlines of out map, the CW shapes are walls
     // that were traced on their outside.
     var interior_walls = [];
-    var exterior_walls = parsedMap.walls.filter(function(poly, index) {
+    var exterior_walls = static_objects.walls.filter(function(poly, index) {
       if (poly.getOrientation() == "CCW") {
         interior_walls.push(poly);
         return false;
@@ -270,63 +620,34 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       return true;
     });
 
-    interior_walls = interior_walls.map(this._convertPolyToClipper);
-    exterior_walls = exterior_walls.map(this._convertPolyToClipper);
-
     var scale = 100;
     
+    // Offset the interior walls.
+    interior_walls = interior_walls.map(NavMesh._geometry.convertPolyToClipper);
     ClipperLib.JS.ScaleUpPaths(interior_walls, scale);
+    
+    var offsetted_interior_walls = [];
+    interior_walls.forEach(function(wall) {
+      var offsetted_paths = NavMesh._geometry.offsetInterior(wall, offset);
+      Array.prototype.push.apply(offsetted_interior_walls, offsetted_paths);
+    });
+
+    // Reverse paths since from here on we're going to treat the
+    // outlines as the exterior of a shape.
+    offsetted_interior_walls.forEach(function(path) {
+      path.reverse();
+    });
+    
+    exterior_walls = exterior_walls.map(NavMesh._geometry.convertPolyToClipper);
+
     ClipperLib.JS.ScaleUpPaths(exterior_walls, scale);
 
-    var cpr = new ClipperLib.Clipper();
-    var co = new ClipperLib.ClipperOffset();
-    co.MiterLimit = 2;
+    //var cpr = new ClipperLib.Clipper();
+    var cpr = NavMesh._geometry.cpr;
+    var co = NavMesh._geometry.co;
+    
     var wall_fillType = ClipperLib.PolyFillType.pftEvenOdd;
     var obstacle_fillType = ClipperLib.PolyFillType.pftNonZero;
-
-    var offsetted_interior_walls = [];
-    // Handle interior walls.
-    interior_walls.forEach(function(wall) {
-      // First, create a shape with the outline as the interior.
-      var boundingShape = this._getBoundingShapeForPaths([wall]);
-      //ClipperLib.JS.ScaleUpPath(boundingShape, scale);
-      cpr.Clear();
-      cpr.AddPath(boundingShape, ClipperLib.PolyType.ptSubject, true);
-      cpr.AddPath(wall, ClipperLib.PolyType.ptClip, true);
-
-      var solution_paths = new ClipperLib.Paths();
-      cpr.Execute(ClipperLib.ClipType.ctDifference,
-        solution_paths,
-        ClipperLib.PolyFillType.pftNonZero,
-        ClipperLib.PolyFillType.pftNonZero);
-
-      // Once we have the shape as created above, inflate it. This gives
-      // better results than treating the outline as the exterior of a
-      // shape and deflating it.
-      var offsetted_paths = new ClipperLib.Paths();
-
-      co.Clear();
-      co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
-      co.Execute(offsetted_paths, offset * scale);
-
-      // If this is not true then the offsetting process shrank the
-      // outline into non-existence and only the bounding shape is
-      // left.
-      // >= 2 in case the offsetting process isolates portions of the
-      // outline (see: GamePad).
-      if (offsetted_paths.length >= 2) {
-        // Get only the paths defining the outlines we were interested
-        // in, discarding the exterior bounding shape.
-        offsetted_paths.shift();
-
-        // Reverse paths since from here on we're going to treat the
-        // outlines as the exterior of a shape.
-        offsetted_paths.forEach(function(path) {
-          path.reverse();
-        });
-        Array.prototype.push.apply(offsetted_interior_walls, offsetted_paths);
-      }
-    }, this);
     
     // Offset exterior walls.
     var offsetted_exterior_walls = [];
@@ -340,9 +661,11 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     });
     
     // Offset obstacles.
+    // Obstacles are offsetted using miter join type to avoid
+    // unnecessary small edges.
     var offsetted_obstacles = new ClipperLib.Paths();
 
-    var obstacles = parsedMap.obstacles.map(this._convertPolyToClipper);
+    var obstacles = static_objects.obstacles.map(NavMesh._geometry.convertPolyToClipper);
     ClipperLib.JS.ScaleUpPaths(obstacles, scale);
     co.Clear();
     co.AddPaths(obstacles, ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
@@ -362,6 +685,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       cpr.Clear();
       cpr.AddPath(wall, ClipperLib.PolyType.ptSubject, true);
       cpr.AddPaths(smaller_exterior_walls, ClipperLib.PolyType.ptClip, true);
+      // Obstacles are small individual solid objects that aren't at
+      // risk of enclosing an interior area.
       cpr.AddPaths(offsetted_obstacles, ClipperLib.PolyType.ptClip, true);
       cpr.Execute(ClipperLib.ClipType.ctDifference,
         paths,
@@ -371,119 +696,14 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       Array.prototype.push.apply(merged_paths, paths);
     });
 
-    // Merge everything.
+    // We are really only concerned with getting the paths into a
+    // polytree structure.
     cpr.Clear();
     cpr.AddPaths(merged_paths, ClipperLib.PolyType.ptSubject, true);
     var unioned_shapes_polytree = new ClipperLib.PolyTree();
     cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_shapes_polytree, wall_fillType, null);
 
-    var polys = new Array();
-
-    /**
-     * An area is an interior shape along with its holes, if any.
-     */
-    var areas = [];
-
-    var outer_polygons = unioned_shapes_polytree.Childs();
-
-    // Organize shapes into their outer polygons and holes.
-    for (var i = 0; i < outer_polygons.length; i++) {
-      var outer_polygon = outer_polygons[i];
-      var contour = outer_polygon.Contour();
-      ClipperLib.JS.ScaleDownPath(contour, scale);
-      var area = {
-        polygon: contour,
-        holes: []
-      }
-
-      outer_polygon.Childs().forEach(function(child) {
-        var contour = child.Contour();
-        ClipperLib.JS.ScaleDownPath(child.Contour(), scale);
-        // Add as a hole.
-        area.holes.push(contour);
-
-        // Add children as additional outer polygons to be expanded.
-        child.Childs().forEach(function(child_outer) {
-          outer_polygons.push(child_outer);
-        });
-      });
-      areas.push(area);
-    }
-    
-    // Convert Clipper Paths to Polys.
-    areas.forEach(function(area) {
-      area.polygon = this._convertClipperToPoly(area.polygon);
-      area.holes = area.holes.map(this._convertClipperToPoly);
-    }, this);
-
-    return areas;
-  }
-
-  /**
-   * A point in ClipperLib is just an object with properties
-   * X and Y corresponding to a point.
-   * @typedef CLPoint
-   * @type {object}
-   * @property {integer} X - The x coordinate of the point.
-   * @property {integer} Y - The y coordinate of the point.
-   */
-
-  /**
-   * A shape in ClipperLib is simply an array of CLPoints.
-   * @typedef CLShape
-   * @type {Array.<CLPoint>}
-   */
-
-  /**
-   * Takes a Poly and converts it into a ClipperLib polygon.
-   * @private
-   * @param {Poly} poly - The Poly to convert.
-   * @return {CLShape} - The converted polygon.
-   */
-  NavMesh.prototype._convertPolyToClipper = function(poly) {
-    return poly.points.map(function(p) {
-      return {X:p.x, Y:p.y};
-    });
-  }
-
-  /**
-   * Convert a ClipperLib shape into a Poly.
-   * @private
-   * @param {CLShape} clip - The shape to convert.
-   * @return {Poly} - The converted shape.
-   */
-  NavMesh.prototype._convertClipperToPoly = function(clip) {
-    var poly = new Poly();
-    poly.init(clip.length);
-    poly.points = clip.map(function(p) {
-      return new Point(p.X, p.Y);
-    });
-    return poly;
-  }
-
-  /**
-   * Generate a bounding shape for paths with a given buffer. If using
-   * for an offsetting operation, the returned CLShape does NOT need to
-   * be scaled up.
-   * @private
-   * @param {Array.<CLShape>} paths - The paths to get a bounding shape for.
-   * @param {integer} [buffer=5] - How many units to pad the bounding
-   *   rectangle.
-   * @return {CLShape} - A bounding rectangle for the paths.
-   */
-  NavMesh.prototype._getBoundingShapeForPaths = function(paths, buffer) {
-    if (typeof buffer == "undefined") buffer = 5;
-    var bounds = ClipperLib.Clipper.GetBounds(paths);
-    bounds.left -= buffer;
-    bounds.top -= buffer;
-    bounds.right += buffer;
-    bounds.bottom += buffer;
-    var shape = [];
-    shape.push({X: bounds.right, Y: bounds.bottom});
-    shape.push({X: bounds.left, Y: bounds.bottom});
-    shape.push({X: bounds.left, Y: bounds.top});
-    shape.push({X: bounds.right, Y: bounds.top});
-    return shape;
+    return NavMesh._geometry.getAreas(unioned_shapes_polytree, scale);
   }
 
   /**
@@ -560,6 +780,278 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       }
     }.bind(this);
   };
+
+  /**
+   * Hold methods used for generating the navigation mesh.
+   * @private
+   */
+  NavMesh._geometry = {};
+
+  /**
+   * Initialized Clipper for operations.
+   */
+  NavMesh._geometry.cpr = new ClipperLib.Clipper();
+
+  /**
+   * Initialized ClipperOffset for operations.
+   */
+  NavMesh._geometry.co = new ClipperLib.ClipperOffset();
+
+  // Default.
+  NavMesh._geometry.co.MiterLimit = 2;
+  NavMesh._geometry.scale = 100;
+
+  /**
+   * Given two sets of polygons, return the ones in the blue set that
+   * are intersected by red.
+   */
+  NavMesh._geometry.getIntersections = function(red, blue) {
+    var indices = [];
+    blue.forEach(function(poly, i) {
+      var intersects = red.some(function(polyb) {
+        return poly.intersects(polyb);
+      });
+      if (intersects) {
+        indices.push(i);
+      }
+    });
+    return indices;
+  };
+
+  /**
+   * An Area is an object that holds a polygon representing a space
+   * along with its holes. An Area can represent, for example, a
+   * traversable region, if we consider the non-hole area of the
+   * polygon as being traversable, or the opposite, if we consider
+   * the non-hole area as being solid, blocking movement.
+   * @typedef Area
+   * @type {object}
+   * @property {Poly} polygon - The polygon defining the outside of the
+   *   area.
+   * @property {Array.<Poly>} holes - The holes in the polygon for this
+   *   area.
+   */
+  /**
+   * Given a PolyTree, return an array of areas assuming even-odd fill
+   * ordering.
+   * @param {ClipperLib.PolyTree} polytree - The polytree output from
+   *   some operation.
+   * @param {integer} [scale=100] - The scale to use when bringing the
+   *   Clipper paths down to size.
+   * @return {Array.<Area>} - The areas represented by the polytree.
+   */
+  NavMesh._geometry.getAreas = function(polytree, scale) {
+    if (typeof scale == 'undefined') scale = NavMesh._geometry.scale;
+    var areas = [];
+
+    var outer_polygons = polytree.Childs();
+
+    // Organize shapes into their outer polygons and holes, assuming
+    // that the first layer of polygons in the polytree represent the
+    // outside edge of the desired areas.
+    for (var i = 0; i < outer_polygons.length; i++) {
+      var outer_polygon = outer_polygons[i];
+      var contour = outer_polygon.Contour();
+      ClipperLib.JS.ScaleDownPath(contour, scale);
+      var area = {
+        polygon: contour,
+        holes: []
+      }
+
+      outer_polygon.Childs().forEach(function(child) {
+        var contour = child.Contour();
+        ClipperLib.JS.ScaleDownPath(child.Contour(), scale);
+        // Add as a hole.
+        area.holes.push(contour);
+
+        // Add children as additional outer polygons to be expanded.
+        child.Childs().forEach(function(child_outer) {
+          outer_polygons.push(child_outer);
+        });
+      });
+      areas.push(area);
+    }
+    
+    // Convert Clipper Paths to Polys.
+    areas.forEach(function(area) {
+      area.polygon = NavMesh._geometry.convertClipperToPoly(area.polygon);
+      area.holes = area.holes.map(NavMesh._geometry.convertClipperToPoly);
+    });
+
+    return areas;
+  };
+
+  /**
+   * Offset a polygon inwards (as opposed to deflating it). The polygon
+   * vertices should be in CCW order and the polygon should already be
+   * scaled.
+   * @param {CLShape} shape - The contour to inflate inwards.
+   * @param {number} offset - The amount to offset the shape.
+   * @param {integer} [scale=100] - The scale for the operation.
+   * @return {ClipperLib.Paths} - The resulting shape from offsetting.
+   *   If the process of offsetting resulted in the interior shape
+   *   closing completely, then an empty array will be returned. The
+   *   returned shape will still be scaled up, for use in other
+   *   operations.
+   */
+  NavMesh._geometry.offsetInterior = function(shape, offset, scale) {
+    if (typeof scale == 'undefined') scale = NavMesh._geometry.scale;
+
+    var cpr = NavMesh._geometry.cpr;
+    var co = NavMesh._geometry.co;
+
+    // First, create a shape with the outline as the interior.
+    var boundingShape = NavMesh._geometry.getBoundingShapeForPaths([shape]);
+
+    cpr.Clear();
+    cpr.AddPath(boundingShape, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPath(shape, ClipperLib.PolyType.ptClip, true);
+
+    var solution_paths = new ClipperLib.Paths();
+    cpr.Execute(ClipperLib.ClipType.ctDifference,
+      solution_paths,
+      ClipperLib.PolyFillType.pftNonZero,
+      ClipperLib.PolyFillType.pftNonZero);
+
+    // Once we have the shape as created above, inflate it. This gives
+    // better results than treating the outline as the exterior of a
+    // shape and deflating it.
+    var offsetted_paths = new ClipperLib.Paths();
+
+    co.Clear();
+    co.AddPaths(solution_paths, ClipperLib.JoinType.jtSquare, ClipperLib.EndType.etClosedPolygon);
+    co.Execute(offsetted_paths, offset * scale);
+
+    // If this is not true then the offsetting process shrank the
+    // outline into non-existence and only the bounding shape is
+    // left.
+    // >= 2 in case the offsetting process isolates portions of the
+    // outline (see: GamePad).
+    if (offsetted_paths.length >= 2) {
+      // Get only the paths defining the outlines we were interested
+      // in, discarding the exterior bounding shape.
+      offsetted_paths.shift();
+    } else {
+      offsetted_paths = new ClipperLib.Paths();
+    }
+    return offsetted_paths;
+  };
+
+  /**
+   * A point in ClipperLib is just an object with properties
+   * X and Y corresponding to a point.
+   * @typedef CLPoint
+   * @type {object}
+   * @property {integer} X - The x coordinate of the point.
+   * @property {integer} Y - The y coordinate of the point.
+   */
+  /**
+   * A shape in ClipperLib is simply an array of CLPoints.
+   * @typedef CLShape
+   * @type {Array.<CLPoint>}
+   */
+  /**
+   * Takes a Poly and converts it into a ClipperLib polygon.
+   * @private
+   * @param {Poly} poly - The Poly to convert.
+   * @return {CLShape} - The converted polygon.
+   */
+  NavMesh._geometry.convertPolyToClipper = function(poly) {
+    return poly.points.map(function(p) {
+      return {X:p.x, Y:p.y};
+    });
+  };
+
+  /**
+   * Convert a ClipperLib shape into a Poly.
+   * @private
+   * @param {CLShape} clip - The shape to convert.
+   * @return {Poly} - The converted shape.
+   */
+  NavMesh._geometry.convertClipperToPoly = function(clip) {
+    var poly = new Poly();
+    poly.init(clip.length);
+    poly.points = clip.map(function(p) {
+      return new Point(p.X, p.Y);
+    });
+    return poly;
+  };
+
+  /**
+   * Generate a bounding shape for paths with a given buffer. If using
+   * for an offsetting operation, the returned CLShape does NOT need to
+   * be scaled up.
+   * @private
+   * @param {Array.<CLShape>} paths - The paths to get a bounding shape for.
+   * @param {integer} [buffer=5] - How many units to pad the bounding
+   *   rectangle.
+   * @return {CLShape} - A bounding rectangle for the paths.
+   */
+  NavMesh._geometry.getBoundingShapeForPaths = function(paths, buffer) {
+    if (typeof buffer == "undefined") buffer = 5;
+    var bounds = ClipperLib.Clipper.GetBounds(paths);
+    bounds.left -= buffer;
+    bounds.top -= buffer;
+    bounds.right += buffer;
+    bounds.bottom += buffer;
+    var shape = [];
+    shape.push({X: bounds.right, Y: bounds.bottom});
+    shape.push({X: bounds.left, Y: bounds.bottom});
+    shape.push({X: bounds.left, Y: bounds.top});
+    shape.push({X: bounds.right, Y: bounds.top});
+    return shape;
+  }
+
+
+
+  // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round
+  ;(function() {
+    /**
+     * Decimal adjustment of a number.
+     *
+     * @param {String}  type  The type of adjustment.
+     * @param {Number}  value The number.
+     * @param {Integer} exp   The exponent (the 10 logarithm of the adjustment base).
+     * @returns {Number} The adjusted value.
+     */
+    function decimalAdjust(type, value, exp) {
+      // If the exp is undefined or zero...
+      if (typeof exp === 'undefined' || +exp === 0) {
+        return Math[type](value);
+      }
+      value = +value;
+      exp = +exp;
+      // If the value is not a number or the exp is not an integer...
+      if (isNaN(value) || !(typeof exp === 'number' && exp % 1 === 0)) {
+        return NaN;
+      }
+      // Shift
+      value = value.toString().split('e');
+      value = Math[type](+(value[0] + 'e' + (value[1] ? (+value[1] - exp) : -exp)));
+      // Shift back
+      value = value.toString().split('e');
+      return +(value[0] + 'e' + (value[1] ? (+value[1] + exp) : exp));
+    }
+
+    // Decimal round
+    if (!Math.round10) {
+      Math.round10 = function(value, exp) {
+        return decimalAdjust('round', value, exp);
+      };
+    }
+    // Decimal floor
+    if (!Math.floor10) {
+      Math.floor10 = function(value, exp) {
+        return decimalAdjust('floor', value, exp);
+      };
+    }
+    // Decimal ceil
+    if (!Math.ceil10) {
+      Math.ceil10 = function(value, exp) {
+        return decimalAdjust('ceil', value, exp);
+      };
+    }
+  })();
 
   return NavMesh;
 });
