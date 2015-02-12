@@ -29,6 +29,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
     this.initialized = false;
 
+    this.updateFuncs = [];
+
     this._setupWorker();
     
     // Parse map tiles into polygons.
@@ -68,13 +70,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Offset polys from side so they represent traversable area.
     var areas = this._offsetPolys(navigation_static_objects);
 
-    this.polys = [];
-    areas.forEach(function(area) {
-      var outline = area.polygon;
-      var holes = area.holes;
-      var polys = NavMesh._geometry.convexPartition(outline, holes);
-      Array.prototype.push.apply(this.polys, polys);
-    }, this);
+    this.polys = areas.map(NavMesh._geometry.partitionArea);
+    // Flatten array.
+    this.polys = Array.prototype.concat.apply([], this.polys);
 
     if (!this.worker) {
       this.pathfinder = new Pathfinder(this.polys);
@@ -101,8 +99,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Set up mesh-dynamic obstacles.
    */
   NavMesh.prototype._setupDynamicObstacles = function(obstacles) {
-    // List of ids for impassable tiles.
-    this.impassable = [];
+    // Holds tile id<->impassable (boolean) associations.
+    this.impassable = {};
     // Polygons defining obstacles.
     this.obstacleDefinitions = {};
     // Relation between ids and obstacles.
@@ -112,12 +110,25 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     this.addObstaclePoly("bomb", this._getApproximateCircle(15));
     this.addObstaclePoly("boost", this._getApproximateCircle(15));
     this.addObstaclePoly("portal", this._getApproximateCircle(15));
+    this.addObstaclePoly("spike", this._getApproximateCircle(14));
     this.addObstaclePoly("gate", this._getSquare(20));
+    this.addObstaclePoly("tile", this._getSquare(20));
+    this.addObstaclePoly("wall", this._getSquare(20));
+    this.addObstaclePoly("sewall", this._getDiagonal(20, "se"));
+    this.addObstaclePoly("newall", this._getDiagonal(20, "ne"));
+    this.addObstaclePoly("swwall", this._getDiagonal(20, "sw"));
+    this.addObstaclePoly("nwwall", this._getDiagonal(20, "nw"));
 
     // Add id<->type associations.
     this.setObstacleType([10, 10.1], "bomb");
     this.setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
     this.setObstacleType([9, 9.1, 9.2, 9.3], "gate");
+    this.setObstacleType([1], "wall");
+    this.setObstacleType([1.1], "swwall");
+    this.setObstacleType([1.2], "nwwall");
+    this.setObstacleType([1.3], "newall");
+    this.setObstacleType([1.4], "sewall");
+    this.setObstacleType([7], "spike");
 
     // Set up obstacle state container. Holds whether position is
     // passable or not. Referenced using array location.
@@ -129,10 +140,29 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Container to hold initial obstacle states.
     var initial_states = [];
     obstacles.forEach(function(obstacle) {
-      this.obstacle_state[Point.toString(obstacle)] = false;
+      // Initialize obstacle states to all be passable.
+      this.obstacle_state[Point.toString(obstacle)] = true;
       this.dynamic_obstacle_locations.push(Point.fromPointLike(obstacle));
       initial_states.push(obstacle);
     }, this);
+
+    // Set up callback to update worker.
+    this.onUpdate(function(polys) {
+      if (this.worker) {
+        this.worker.postMessage(["polys", polys]);
+      } else {
+        this.logger.log("navmesh:debug", "Worker not loaded yet.");
+      }
+    }.bind(this));
+
+    this.logger.log("navmesh:debug", "impassable pre-update:", this.impassable);
+    // Set up already-known dynamic impassable values.
+    this.setImpassable([10, 5, 14, 15, 9.1]);
+    // Walls and spikes.
+    this.setImpassable([1, 1.1, 1.2, 1.3, 1.4, 7]);
+
+    // Initialize mapupdate with already-present dynamic obstacles.
+    this.mapUpdate(initial_states);
   };
 
   /**
@@ -195,6 +225,29 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
+   * Get the upper or lower diagonal of a square of the given
+   * radius. 
+   * @private
+   * @param {number} radius - The length of half of one side of the
+   *   square to get the diagonal of.
+   * @param {string} corner - One of ne, se, nw, sw indicating which
+   *   corner should be filled.
+   * @return {Poly} - The diagonal shape.
+   */
+  NavMesh.prototype._getDiagonal = function(radius, corner) {
+    var types = {
+      "ne": [[radius, -radius], [radius, radius], [-radius, -radius]],
+      "se": [[radius, radius], [-radius, radius], [radius, -radius]],
+      "sw": [[-radius, radius], [-radius, -radius], [radius, radius]],
+      "nw": [[-radius, -radius], [radius, -radius], [-radius, radius]]
+    };
+    var points = types[corner].map(function(mul) {
+      return new Point(mul[0], mul[1]);
+    });
+    return new Poly(points);
+  };
+
+  /**
    * Add poly definition for obstacle type.
    * edges should be relative to center of tile.
    */
@@ -209,7 +262,12 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @return {Poly} - The polygon representing the obstacle.
    */
   NavMesh.prototype._getObstaclePoly = function(id) {
-    return this.obstacleDefinitions[this.idToObstacles[id]].clone();
+    var poly = this.obstacleDefinitions[this.idToObstacles[id]]
+    if (poly) {
+      return poly.clone();
+    } else {
+      this.logger.log("navmesh:debug", "No poly found for id:", id);
+    }
   };
 
   /**
@@ -226,6 +284,32 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
         this.onInit(fn);
       }.bind(this), 10);
     }
+  };
+
+  /**
+   * A function called when the navigation mesh updates.
+   * @callback UpdateCallback
+   * @param {Array.<Poly>} - The new polys defining the navigation
+   *   mesh.
+   */
+  /**
+   * Register a function to be called when the navigation mesh updates.
+   * @param {UpdateCallback} fn - The function to be called.
+   */
+  NavMesh.prototype.onUpdate = function(fn) {
+    this.updateFuncs.push(fn);
+  };
+
+  /**
+   * Update the navigation mesh to the given polys and call
+   * the update functions.
+   * @param {Array.<Poly>} polys - The new polys defining the nav mesh.
+   */
+  NavMesh.prototype._update = function(polys) {
+    this.polys = polys;
+    this.updateFuncs.forEach(function(fn) {
+      fn(this.polys);
+    }, this);
   };
 
   /**
@@ -301,6 +385,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     ids = ids.filter(function(id) {
       return this._isPassable(id);
     }, this);
+    this.logger.log("navmesh:debug", "Ids passed:", ids);
 
     var updates = [];
     // Check if any of the dynamic tiles have the values passed.
@@ -316,7 +401,10 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     }, this);
 
     // Add to list of impassable tiles.
-    Array.prototype.push.apply(this.impassable, ids);
+    ids.forEach(function(id) {
+      this.impassable[id] = true;
+    }, this);
+    this.logger.log("Impassable after update:", this.impassable);
 
     if (updates.length > 0) {
       this.mapUpdate(updates);
@@ -347,9 +435,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     }, this);
 
     // Remove from list of impassable tiles.
-    this.impassable = this.impassable.filter(function(id) {
-      return ids.indexOf(id) == -1;
-    })
+    ids.forEach(function(id) {
+      this.impassable[id] = false;
+    }, this);
 
     if (updates.length > 0) {
       this.mapUpdate(updates);
@@ -367,7 +455,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    */
   /**
    * Takes an array of tiles and updates the navigation mesh to reflect
-   * the newly traversable area.
+   * the newly traversable area. This should be set as a listener to
+   * `mapupdate` socket events.
    * @param {Array.<TileUpdate>} - Information on the tiles updates.
    */
   NavMesh.prototype.mapUpdate = function(data) {
@@ -439,7 +528,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    */
   NavMesh.prototype._isPassable = function(id) {
     // Check if in list of impassable tiles.
-    return this.impassable.indexOf(id) == -1;
+    return !this.impassable.hasOwnProperty(id) || !this.impassable[id];
   };
 
   /**
@@ -485,7 +574,77 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @param {Array.<TileUpdate>} updates - The tile update information.
    */
   NavMesh.prototype._passableUpdate = function(updates) {
-    // TODO
+    // Assume each of the tiles is now a square of open space.
+    var tiles = updates.map(function(update) {
+      return this._getTilePoly({
+        x: update.x,
+        y: update.y,
+        v: 1
+      });
+    }, this);
+
+    // Offset and merge newly passable tiles, assuming no tile along
+    // with its offset would have been larger than a single tile.
+    var scale = 100;
+    tiles = this._offsetDynamicObs(tiles);
+
+    var cpr = NavMesh._geometry.cpr;
+
+    // Merge open tiles together into contiguous shapes.
+    cpr.Clear();
+    cpr.AddPaths(tiles, ClipperLib.PolyType.ptSubject, true);
+    var merged_tiles = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      merged_tiles,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    // Get impassable tiles bordering the now-passable area and offset them.
+    var bordered_tiles = this._getBorderedTiles(updates);
+    var bordered_polys = bordered_tiles.map(this._getTilePoly, this);
+    var surrounding_impassable = this._offsetDynamicObs(bordered_polys);
+
+    // Get difference between the two.
+    // Change code below.
+    cpr.Clear();
+    var paths = new ClipperLib.Paths();
+    cpr.AddPaths(merged_tiles, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(surrounding_impassable, ClipperLib.PolyType.ptClip, true);
+    cpr.Execute(ClipperLib.ClipType.ctDifference,
+      paths,
+      ClipperLib.PolyFillType.pftNonZero,
+      ClipperLib.PolyFillType.pftNonZero
+    );
+
+    this.logger.log("navmesh:debug", "Paths:", paths.length);
+
+    // Get mesh polygons.
+    var meshPolys = this.polys.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(meshPolys, scale);
+    var cpr = NavMesh._geometry.cpr;
+
+    // Merge mesh polys and passable area.
+    cpr.Clear();
+    cpr.AddPaths(meshPolys, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(paths, ClipperLib.PolyType.ptSubject, true);
+    var mergedMeshPolys = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      mergedMeshPolys,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    // Partition the whole space.
+    var areas = NavMesh._geometry.getAreas(mergedMeshPolys, scale);
+    // Make new polys from new space.
+    var polys = areas.map(NavMesh._geometry.partitionArea);
+    polys = Array.prototype.concat.apply([], polys);
+
+    // debugging
+    if (polys.length !== 0) {
+      this._update(polys);
+    }
   };
 
   /**
@@ -494,19 +653,102 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @param {Array.<TileUpdate>} updates - The tile update information.
    */
   NavMesh.prototype._impassableUpdate = function(updates) {
-    // TODO
+    var scale = 100;
     // Get polygons defining these obstacles.
-    var polys = updates.map(function(update) {
+    var obstaclePolys = updates.map(function(update) {
       return this._getTilePoly(update);
     }, this);
 
     // Get offsetted and combined obstacles.
-    var obstacles = this._offsetDynamicObs(polys);
+    var obstacles = this._offsetDynamicObs(obstaclePolys);
 
-    // Get convex partition of new obstacles.
+    var meshPolys = this.polys.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(meshPolys, scale);
+    var cpr = NavMesh._geometry.cpr;
 
+    // Merge mesh polys.
+    cpr.Clear();
+    cpr.AddPaths(meshPolys, ClipperLib.PolyType.ptSubject, true);
+    var mergedMeshPolys = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      mergedMeshPolys,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    // Get difference between the two.
+    cpr.Clear();
+    var paths = new ClipperLib.Paths();
+    cpr.AddPaths(mergedMeshPolys, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(obstacles, ClipperLib.PolyType.ptClip, true);
+    cpr.Execute(ClipperLib.ClipType.ctDifference,
+      paths,
+      ClipperLib.PolyFillType.pftNonZero,
+      ClipperLib.PolyFillType.pftNonZero
+    );
+
+    var areas = NavMesh._geometry.getAreas(paths, scale);
+    // Make new polys from new space.
+    var polys = areas.map(NavMesh._geometry.partitionArea);
+    polys = Array.prototype.concat.apply([], polys);
+
+    // debugging
+    if (polys.length !== 0) {
+      this._update(polys);
+    }
+
+    
+    /*// For more specific dynamic update of only the polygons
+    // that intersect with the new region.
+    // Get convex partition of new obstacle areas.
+    var obstaclePolys = obstacles.map(NavMesh._geometry.partitionArea);
+    // Flatten array.
+    obstaclePolys = Array.prototype.concat.apply([], obstaclePolys);
 
     // Get intersection between polys and the existing map polys.
+    var overlappedMeshPolys = NavMesh._geometry.getIntersections(obstaclePolys, this.polys);
+
+    // Create outline with matched polys.
+    var newmeshpolys = overlappedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(newmeshpolys, 100);
+    var cpr = NavMesh._geometry.cpr;
+
+    // Merge matched polys
+    cpr.Clear();
+    cpr.AddPaths(newmeshpolys, ClipperLib.PolyType.ptSubject, true);
+    var merged_polys = new ClipperLib.Paths();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      merged_obstacles,
+      ClipperLib.PolyFillType.pftNonZero,
+      null);
+
+    // Take difference of polygons defining walkable space and 
+    var merged_paths = [];
+    var paths = new ClipperLib.Paths();
+    cpr.Clear();
+    cpr.AddPath(merged_polys, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(smaller_exterior_walls, ClipperLib.PolyType.ptClip, true);
+    merged_polys
+    offsetted_interior_walls.forEach(function(wall) {
+      var area = ClipperLib.JS.AreaOfPolygon(wall, scale);
+      var smaller_exterior_walls = offsetted_exterior_walls.filter(function(ext_wall) {
+        return ClipperLib.JS.AreaOfPolygon(ext_wall, scale) < area;
+      });
+      var paths = new ClipperLib.Paths();
+      cpr.Clear();
+      cpr.AddPath(wall, ClipperLib.PolyType.ptSubject, true);
+      cpr.AddPaths(smaller_exterior_walls, ClipperLib.PolyType.ptClip, true);
+      // Obstacles are small individual solid objects that aren't at
+      // risk of enclosing an interior area.
+      cpr.AddPaths(offsetted_obstacles, ClipperLib.PolyType.ptClip, true);
+      cpr.Execute(ClipperLib.ClipType.ctDifference,
+        paths,
+        ClipperLib.PolyFillType.pftNonZero,
+        ClipperLib.PolyFillType.pftNonZero
+      );
+      Array.prototype.push.apply(merged_paths, paths);
+    });*/
   };
 
   /**
@@ -527,7 +769,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Merge obstacles together, so obstacles that share a common edge
     // will be expanded properly.
     cpr.Clear();
-    cpr.AddPaths(merged_paths, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(obstacles, ClipperLib.PolyType.ptSubject, true);
     var merged_obstacles = new ClipperLib.Paths();
     cpr.Execute(
       ClipperLib.ClipType.ctUnion,
@@ -547,16 +789,18 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     });
 
     // Merge any newly-overlapping obstacles.
-    cpr.Clear();
+    // May be redundant with treatment in getAreas.
+    /*cpr.Clear();
     cpr.AddPaths(offsetted_paths, ClipperLib.PolyType.ptSubject, true);
     merged_obstacles = new ClipperLib.Paths();
     cpr.Execute(
       ClipperLib.ClipType.ctUnion,
       merged_obstacles,
       ClipperLib.PolyFillType.pftNonZero,
-      null);
-
-    return merged_obstacles;
+      null);*/
+    return offsetted_paths;
+    // If we end up needing the areas later.
+    //return NavMes._geometry.getAreas(offsetted_paths, scale);
   };
 
   /**
@@ -585,14 +829,70 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @return {Array.<ArrayLoc>} - The new array locations.
    */
   NavMesh.prototype._getBorderedTiles = function(tiles) {
-    // TODO
-  };
+    // Track locations already being updated or added.
+    var locations = {};
+    tiles.forEach(function(tile) {
+      locations[Point.toString(tile)] = true;
+    });
 
-  /**
-   * Do the mesh update.
-   */
-  NavMesh.prototype._updateMesh = function() {
-    // TODO
+    var map = this.map;
+    var xUpperBound = map.length;
+    var yUpperBound = map[0].length;
+    // Get the locations adjacent to a given tile in the map.
+    var getAdjacent = function(tile) {
+      var x = tile.x;
+      var y = tile.y;
+      var xUp = x + 1 < xUpperBound;
+      var xDown = x >= 0;
+      var yUp = y + 1 < yUpperBound;
+      var yDown = y >= 0;
+
+      var adjacents = [];
+      if (xUp) {
+        adjacents.push({x: x + 1, y: y});
+        if (yUp) {
+          adjacents.push({x: x + 1, y: y + 1});
+        }
+        if (yDown) {
+          adjacents.push({x: x + 1, y: y - 1});
+        }
+      }
+      if (xDown) {
+        adjacents.push({x: x - 1, y: y});
+        if (yUp) {
+          adjacents.push({x: x - 1, y: y + 1});
+        }
+        if (yDown) {
+          adjacents.push({x: x - 1, y: y - 1});
+        }
+      }
+      if (yUp) {
+        adjacents.push({x: x, y: y + 1});
+      }
+      if (yDown) {
+        adjacents.push({x: x, y: y - 1});
+      }
+      return adjacents;
+    };
+
+    // Store adjacent impassable tiles.
+    var adjacent_tiles = [];
+    tiles.forEach(function(tile) {
+      var adjacents = getAdjacent(tile);
+      adjacents.forEach(function(adjacent) {
+        var id = Point.toString(adjacent);
+        if (!locations[id]) {
+          // Record as having been seen.
+          locations[id] = true;
+          var val = this.map[adjacent.x][adjacent.y];
+          if (!this._isPassable(val)) {
+            adjacent.v = val;
+            adjacent_tiles.push(adjacent);
+          }
+        }
+      }, this);
+    }, this);
+    return adjacent_tiles;
   };
 
   /**
@@ -720,14 +1020,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       Array.prototype.push.apply(merged_paths, paths);
     });
 
-    // We are really only concerned with getting the paths into a
-    // polytree structure.
-    cpr.Clear();
-    cpr.AddPaths(merged_paths, ClipperLib.PolyType.ptSubject, true);
-    var unioned_shapes_polytree = new ClipperLib.PolyTree();
-    cpr.Execute(ClipperLib.ClipType.ctUnion, unioned_shapes_polytree, wall_fillType, null);
-
-    return NavMesh._geometry.getAreas(unioned_shapes_polytree, scale);
+    return NavMesh._geometry.getAreas(merged_paths, scale);
   }
 
   /**
@@ -826,11 +1119,16 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   NavMesh._geometry.scale = 100;
 
   /**
-   * Given two sets of polygons, return the ones in the blue set that
-   * are intersected by red.
+   * Given two sets of polygons, return indices of the ones in the blue
+   * set that are intersected by ones in red.
+   * @param {Array.<Poly>} red
+   * @param {Array.<Poly>} blue
+   * @return {Array.<integer>} - The indices of the intersected blue
+   *   polys.
    */
   NavMesh._geometry.getIntersections = function(red, blue) {
     var indices = [];
+    // Naive solution.
     blue.forEach(function(poly, i) {
       var intersects = red.some(function(polyb) {
         return poly.intersects(polyb);
@@ -858,17 +1156,32 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Given a PolyTree, return an array of areas assuming even-odd fill
    * ordering.
-   * @param {ClipperLib.PolyTree} polytree - The polytree output from
-   *   some operation.
+   * @param {ClipperLib.Paths} paths - The paths output from some
+   *   operation. Paths should be non-overlapping, i.e. the edges of
+   *   represented polygons should not be overlapping, but polygons
+   *   may be fully contained in one another. Paths should already
+   *   be scaled up.
    * @param {integer} [scale=100] - The scale to use when bringing the
    *   Clipper paths down to size.
    * @return {Array.<Area>} - The areas represented by the polytree.
    */
-  NavMesh._geometry.getAreas = function(polytree, scale) {
+  NavMesh._geometry.getAreas = function(paths, scale) {
     if (typeof scale == 'undefined') scale = NavMesh._geometry.scale;
+    // We are really only concerned with getting the paths into a
+    // polytree structure.
+    var cpr = NavMesh._geometry.cpr;
+    cpr.Clear();
+    cpr.AddPaths(paths, ClipperLib.PolyType.ptSubject, true);
+    var unioned_shapes_polytree = new ClipperLib.PolyTree();
+    cpr.Execute(
+      ClipperLib.ClipType.ctUnion,
+      unioned_shapes_polytree,
+      ClipperLib.PolyFillType.pftEvenOdd,
+      null);
+
     var areas = [];
 
-    var outer_polygons = polytree.Childs();
+    var outer_polygons = unioned_shapes_polytree.Childs();
 
     // Organize shapes into their outer polygons and holes, assuming
     // that the first layer of polygons in the polytree represent the
@@ -997,6 +1310,16 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     
     return PolyUtils.convexPartition(outline, holes);
   }
+
+  /**
+   * Partition the provided area.
+   * @private
+   * @param {Area} area - The Area to partition.
+   */
+  NavMesh._geometry.partitionArea = function(area) {
+    return NavMesh._geometry.convexPartition(area.polygon, area.holes);
+  }
+
 
   /**
    * A point in ClipperLib is just an object with properties
