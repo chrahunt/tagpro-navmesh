@@ -352,12 +352,12 @@ function(poly2tri) {
    * @return {Array.<Edge>} - The edges of the polygon.
    */
   Poly.prototype.edges = function() {
-    if (!this.hasOwnProperty("edges")) {
-      this.edges = this.points.map(function(point, i) {
+    if (!this.hasOwnProperty("cached_edges")) {
+      this.cached_edges = this.points.map(function(point, i) {
         return new Edge(point, this.points[this.getNextI(i)]);
-      });
+      }, this);
     }
-    return this.edges;
+    return this.cached_edges;
   };
 
   /**
@@ -369,6 +369,9 @@ function(poly2tri) {
     var inside = poly.points.some(function(p) {
       return this.containsPoint(p);
     }, this);
+    inside = inside || this.points.some(function(p) {
+      return poly.containsPoint(p);
+    });
     if (inside) {
       return true;
     } else {
@@ -379,7 +382,7 @@ function(poly2tri) {
           return ownEdge.intersects(otherEdge);
         });
       });
-      return intersects;
+      return intersect;
     }
   };
 
@@ -501,6 +504,9 @@ function(poly2tri) {
       }
     }
 
+    // Separate polys to remove collinear points.
+    PolyUtils._separatePolys(holes.concat(poly));
+
     // Convert polygon into format required by poly2tri.
     var contour = PolyUtils._convertPolyToP2TPoly(poly);
 
@@ -587,6 +593,67 @@ function(poly2tri) {
       }
     }
     return triangles;
+  }
+
+  /**
+   * Takes an array of polygons that overlap themselves and others
+   * at discrete corner points and separate those overlapping corners
+   * slightly so the polygons are suitable for triangulation by
+   * poly2tri.js. This changes the Poly objects in the array.
+   * @private
+   * @param {Array.<Poly>} polys - The polygons to separate.
+   * @param {number} [offset=1] - The number of units the vertices
+   *   should be moved away from each other.
+   */
+  PolyUtils._separatePolys = function(polys, offset) {
+    offset = offset || 1;
+    var discovered = {};
+    var dupes = {};
+    // Offset to use in calculation.
+    // Find duplicates.
+    for (var s1 = 0; s1 < polys.length; s1++) {
+      var poly = polys[s1];
+      for (var i = 0; i < poly.numpoints; i++) {
+        var point = poly.points[i].toString();
+        if (!discovered.hasOwnProperty(point)) {
+          discovered[point] = true;
+        } else {
+          dupes[point] = true;
+        }
+      }
+    }
+
+    // Get duplicate points.
+    var dupe_points = [];
+    var dupe;
+    for (var s1 = 0; s1 < polys.length; s1++) {
+      var poly = polys[s1];
+      for (var i = 0; i < poly.numpoints; i++) {
+        var point = poly.points[i];
+        if (dupes.hasOwnProperty(point.toString())) {
+          dupe = [point, i, poly];
+          dupe_points.push(dupe);
+        }
+      }
+    }
+
+    // Sort elements in descending order based on their indices to
+    // prevent future indices from becoming invalid when changes are made.
+    dupe_points.sort(function(a, b) {
+      return b[1] - a[1]
+    });
+    // Edit duplicates.
+    var prev, next, point, index, p1, p2;
+    dupe_points.forEach(function(e, i, ary) {
+      point = e[0], index = e[1], poly = e[2];
+      prev = poly.points[poly.getPrevI(index)];
+      next = poly.points[poly.getNextI(index)];
+      p1 = point.add(prev.sub(point).normalize().mul(offset));
+      p2 = point.add(next.sub(point).normalize().mul(offset));
+      // Insert new points.
+      poly.points.splice(index, 1, p1, p2);
+      poly.update();
+    });
   }
 
   /**

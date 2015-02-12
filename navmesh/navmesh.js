@@ -301,12 +301,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
-   * Update the navigation mesh to the given polys and call
-   * the update functions.
-   * @param {Array.<Poly>} polys - The new polys defining the nav mesh.
+   * Update the navigation mesh to the given polys and call the update
+   * functions. If no polys are provided then the update functions are
+   * called with the current set of mesh polys.
+   * @param {Array.<Poly>} [polys] - The new polys defining the nav mesh.
    */
   NavMesh.prototype._update = function(polys) {
-    this.polys = polys;
+    if (polys) {
+      this.polys = polys;
+    }
     this.updateFuncs.forEach(function(fn) {
       fn(this.polys);
     }, this);
@@ -574,8 +577,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @param {Array.<TileUpdate>} updates - The tile update information.
    */
   NavMesh.prototype._passableUpdate = function(updates) {
+    var scale = 100;
     // Assume each of the tiles is now a square of open space.
-    var tiles = updates.map(function(update) {
+    var passableTiles = updates.map(function(update) {
       return this._getTilePoly({
         x: update.x,
         y: update.y,
@@ -585,66 +589,57 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
     // Offset and merge newly passable tiles, assuming no tile along
     // with its offset would have been larger than a single tile.
-    var scale = 100;
-    tiles = this._offsetDynamicObs(tiles);
+    // Set offset slightly larger that normal so that we catch all
+    // relevant polygons that need to be updated in the navmesh.
+    var passableArea = this._offsetDynamicObs(passableTiles, 20);
 
     var cpr = NavMesh._geometry.cpr;
 
-    // Merge open tiles together into contiguous shapes.
-    cpr.Clear();
-    cpr.AddPaths(tiles, ClipperLib.PolyType.ptSubject, true);
-    var merged_tiles = new ClipperLib.Paths();
-    cpr.Execute(
-      ClipperLib.ClipType.ctUnion,
-      merged_tiles,
-      ClipperLib.PolyFillType.pftNonZero,
-      null);
-
     // Get impassable tiles bordering the now-passable area and offset them.
-    var bordered_tiles = this._getBorderedTiles(updates);
-    var bordered_polys = bordered_tiles.map(this._getTilePoly, this);
-    var surrounding_impassable = this._offsetDynamicObs(bordered_polys);
+    var borderingTiles = this._getBorderedTiles(updates);
+    var borderingPolys = borderingTiles.map(this._getTilePoly, this);
+    var surroundingArea = this._offsetDynamicObs(borderingPolys);
 
-    // Get difference between the two.
-    // Change code below.
+    // Get difference between the open area and the surrounding obstacles.
     cpr.Clear();
-    var paths = new ClipperLib.Paths();
-    cpr.AddPaths(merged_tiles, ClipperLib.PolyType.ptSubject, true);
-    cpr.AddPaths(surrounding_impassable, ClipperLib.PolyType.ptClip, true);
+    var actualPassableArea = new ClipperLib.Paths();
+    cpr.AddPaths(passableArea, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(surroundingArea, ClipperLib.PolyType.ptClip, true);
     cpr.Execute(ClipperLib.ClipType.ctDifference,
-      paths,
+      actualPassableArea,
       ClipperLib.PolyFillType.pftNonZero,
       ClipperLib.PolyFillType.pftNonZero
     );
 
-    this.logger.log("navmesh:debug", "Paths:", paths.length);
+    var passableAreas = NavMesh._geometry.getAreas(actualPassableArea, scale);
 
-    // Get mesh polygons.
-    var meshPolys = this.polys.map(NavMesh._geometry.convertPolyToClipper);
-    ClipperLib.JS.ScaleUpPaths(meshPolys, scale);
-    var cpr = NavMesh._geometry.cpr;
+    var passablePartition = NavMesh._geometry.partitionAreas(passableAreas);
 
-    // Merge mesh polys and passable area.
+    // Get mesh polys intersected by offsetted passable area.
+    var intersectedMeshPolys = this._getIntersectedPolys(passablePartition);
+
+    // Create outline with matched mesh polys.
+    intersectedMeshPolys = intersectedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(intersectedMeshPolys, scale);
+
+    // Merge intersected mesh polys and with newly passable area.
     cpr.Clear();
-    cpr.AddPaths(meshPolys, ClipperLib.PolyType.ptSubject, true);
-    cpr.AddPaths(paths, ClipperLib.PolyType.ptSubject, true);
-    var mergedMeshPolys = new ClipperLib.Paths();
+    cpr.AddPaths(intersectedMeshPolys, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(actualPassableArea, ClipperLib.PolyType.ptSubject, true);
+    var newMeshArea = new ClipperLib.Paths();
     cpr.Execute(
       ClipperLib.ClipType.ctUnion,
-      mergedMeshPolys,
+      newMeshArea,
       ClipperLib.PolyFillType.pftNonZero,
       null);
 
-    // Partition the whole space.
-    var areas = NavMesh._geometry.getAreas(mergedMeshPolys, scale);
-    // Make new polys from new space.
-    var polys = areas.map(NavMesh._geometry.partitionArea);
-    polys = Array.prototype.concat.apply([], polys);
+    // Partition the unioned mesh polys and new passable area and add
+    // to the existing mesh polys.
+    var meshAreas = NavMesh._geometry.getAreas(newMeshArea, scale);
+    var newPolys = NavMesh._geometry.partitionAreas(meshAreas);
+    Array.prototype.push.apply(this.polys, newPolys);
 
-    // debugging
-    if (polys.length !== 0) {
-      this._update(polys);
-    }
+    this._update();
   };
 
   /**
@@ -659,16 +654,25 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       return this._getTilePoly(update);
     }, this);
 
-    // Get offsetted and combined obstacles.
-    var obstacles = this._offsetDynamicObs(obstaclePolys);
+    // Offset the obstacle polygons.
+    var offsettedObstacles = this._offsetDynamicObs(obstaclePolys);
+    var obstacleAreas = NavMesh._geometry.getAreas(offsettedObstacles, scale);
 
-    var meshPolys = this.polys.map(NavMesh._geometry.convertPolyToClipper);
-    ClipperLib.JS.ScaleUpPaths(meshPolys, scale);
+    // Get convex partition of new obstacle areas for finding
+    // intersections.
+    var obstaclePartition = NavMesh._geometry.partitionAreas(obstacleAreas);
+
+    // Get mesh polys intersected by offsetted obstacles.
+    var intersectedMeshPolys = this._getIntersectedPolys(obstaclePartition);
+
+    // Create outline with matched mesh polys.
+    intersectedMeshPolys = intersectedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
+    ClipperLib.JS.ScaleUpPaths(intersectedMeshPolys, scale);
     var cpr = NavMesh._geometry.cpr;
 
-    // Merge mesh polys.
+    // Merge matched polys
     cpr.Clear();
-    cpr.AddPaths(meshPolys, ClipperLib.PolyType.ptSubject, true);
+    cpr.AddPaths(intersectedMeshPolys, ClipperLib.PolyType.ptSubject, true);
     var mergedMeshPolys = new ClipperLib.Paths();
     cpr.Execute(
       ClipperLib.ClipType.ctUnion,
@@ -676,11 +680,12 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       ClipperLib.PolyFillType.pftNonZero,
       null);
 
-    // Get difference between the two.
-    cpr.Clear();
+    // Take difference of mesh polys and obstacle polys.
     var paths = new ClipperLib.Paths();
+    cpr.Clear();
     cpr.AddPaths(mergedMeshPolys, ClipperLib.PolyType.ptSubject, true);
-    cpr.AddPaths(obstacles, ClipperLib.PolyType.ptClip, true);
+    cpr.AddPaths(offsettedObstacles, ClipperLib.PolyType.ptClip, true);
+
     cpr.Execute(ClipperLib.ClipType.ctDifference,
       paths,
       ClipperLib.PolyFillType.pftNonZero,
@@ -688,67 +693,13 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     );
 
     var areas = NavMesh._geometry.getAreas(paths, scale);
-    // Make new polys from new space.
-    var polys = areas.map(NavMesh._geometry.partitionArea);
-    polys = Array.prototype.concat.apply([], polys);
+    // Make polys from new space.
+    var polys = NavMesh._geometry.partitionAreas(areas);
 
-    // debugging
-    if (polys.length !== 0) {
-      this._update(polys);
-    }
+    // Add to existing polygons.
+    Array.prototype.push.apply(this.polys, polys);
 
-    
-    /*// For more specific dynamic update of only the polygons
-    // that intersect with the new region.
-    // Get convex partition of new obstacle areas.
-    var obstaclePolys = obstacles.map(NavMesh._geometry.partitionArea);
-    // Flatten array.
-    obstaclePolys = Array.prototype.concat.apply([], obstaclePolys);
-
-    // Get intersection between polys and the existing map polys.
-    var overlappedMeshPolys = NavMesh._geometry.getIntersections(obstaclePolys, this.polys);
-
-    // Create outline with matched polys.
-    var newmeshpolys = overlappedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
-    ClipperLib.JS.ScaleUpPaths(newmeshpolys, 100);
-    var cpr = NavMesh._geometry.cpr;
-
-    // Merge matched polys
-    cpr.Clear();
-    cpr.AddPaths(newmeshpolys, ClipperLib.PolyType.ptSubject, true);
-    var merged_polys = new ClipperLib.Paths();
-    cpr.Execute(
-      ClipperLib.ClipType.ctUnion,
-      merged_obstacles,
-      ClipperLib.PolyFillType.pftNonZero,
-      null);
-
-    // Take difference of polygons defining walkable space and 
-    var merged_paths = [];
-    var paths = new ClipperLib.Paths();
-    cpr.Clear();
-    cpr.AddPath(merged_polys, ClipperLib.PolyType.ptSubject, true);
-    cpr.AddPaths(smaller_exterior_walls, ClipperLib.PolyType.ptClip, true);
-    merged_polys
-    offsetted_interior_walls.forEach(function(wall) {
-      var area = ClipperLib.JS.AreaOfPolygon(wall, scale);
-      var smaller_exterior_walls = offsetted_exterior_walls.filter(function(ext_wall) {
-        return ClipperLib.JS.AreaOfPolygon(ext_wall, scale) < area;
-      });
-      var paths = new ClipperLib.Paths();
-      cpr.Clear();
-      cpr.AddPath(wall, ClipperLib.PolyType.ptSubject, true);
-      cpr.AddPaths(smaller_exterior_walls, ClipperLib.PolyType.ptClip, true);
-      // Obstacles are small individual solid objects that aren't at
-      // risk of enclosing an interior area.
-      cpr.AddPaths(offsetted_obstacles, ClipperLib.PolyType.ptClip, true);
-      cpr.Execute(ClipperLib.ClipType.ctDifference,
-        paths,
-        ClipperLib.PolyFillType.pftNonZero,
-        ClipperLib.PolyFillType.pftNonZero
-      );
-      Array.prototype.push.apply(merged_paths, paths);
-    });*/
+    this._update();
   };
 
   /**
@@ -789,38 +740,27 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     });
 
     // Merge any newly-overlapping obstacles.
-    // May be redundant with treatment in getAreas.
-    /*cpr.Clear();
+    cpr.Clear();
     cpr.AddPaths(offsetted_paths, ClipperLib.PolyType.ptSubject, true);
     merged_obstacles = new ClipperLib.Paths();
     cpr.Execute(
       ClipperLib.ClipType.ctUnion,
       merged_obstacles,
       ClipperLib.PolyFillType.pftNonZero,
-      null);*/
-    return offsetted_paths;
-    // If we end up needing the areas later.
-    //return NavMes._geometry.getAreas(offsetted_paths, scale);
+      null);
+    return merged_obstacles;
   };
 
   /**
-   * Get the polygons impacted by the addition of new obstacles.
-   * @param {Array.<Poly>} obstacles - The obstacles to get the
-   *   intersection of. Assumed to be convex.
+   * Get and remove the mesh polygons impacted by the addition of new
+   * obstacles. The provided obstacles should already be offsetted.
+   * @param {Array.<Poly>} obstacles - The offsetted obstacles to get
+   *   the intersection of. Must be convex.
    * @return {Array.<Poly>} - The affected polys.
    */
   NavMesh.prototype._getIntersectedPolys = function(obstacles) {
-    // TODO
-
-  };
-
-  /**
-   * Retrieve the polygons bordering obstacles to be removed.
-   * @param {Array.<Poly>} - The obstacles to be removed.
-   * @return {IntersectionResult} - The affected polys.
-   */
-  NavMesh.prototype._getBorderedPolys = function(obstacles) {
-    // TODO
+    var intersectedIndices = NavMesh._geometry.getIntersections(obstacles, this.polys);
+    return NavMesh._util.splice(this.polys, intersectedIndices);
   };
 
   /**
@@ -893,17 +833,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       }, this);
     }, this);
     return adjacent_tiles;
-  };
-
-  /**
-   * Take the provided polys, offset them, and merge them.
-   * @param {Array.<Poly>} polys - The polygons to offset and merge.
-   * @param {number} offset - The amount to offset the polygons.
-   * @return {Array.<MapArea>} - The result of the offsetting and merging
-   *   operation.
-   */
-  NavMesh.prototype._offsetAndMerge = function(polys, offset, type) {
-    // TODO
   };
 
   /**
@@ -1114,7 +1043,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    */
   NavMesh._geometry.co = new ClipperLib.ClipperOffset();
 
-  // Default.
+  // Defaults.
   NavMesh._geometry.co.MiterLimit = 2;
   NavMesh._geometry.scale = 100;
 
@@ -1222,7 +1151,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Offset a polygon inwards (as opposed to deflating it). The polygon
    * vertices should be in CCW order and the polygon should already be
    * scaled.
-   * @param {CLShape} shape - The contour to inflate inwards.
+   * @param {CLShape} shape - The shape to inflate inwards.
    * @param {number} offset - The amount to offset the shape.
    * @param {integer} [scale=100] - The scale for the operation.
    * @return {ClipperLib.Paths} - The resulting shape from offsetting.
@@ -1276,8 +1205,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Offset a polygon. The polygon vertices should be in CW order and
-   * the polygon should already be scaled.
-   * @param {CLShape} shape - The contour to inflate inwards.
+   * the polygon should already be scaled up.
+   * @param {CLShape} shape - The shape to inflate outwards.
    * @param {number} offset - The amount to offset the shape.
    * @param {integer} [scale=100] - The scale for the operation.
    * @return {ClipperLib.Paths} - The resulting shape from offsetting.
@@ -1315,11 +1244,24 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Partition the provided area.
    * @private
    * @param {Area} area - The Area to partition.
+   * @return {Array.<Poly>} - Polygons representing the partitioned
+   *   space.
    */
   NavMesh._geometry.partitionArea = function(area) {
     return NavMesh._geometry.convexPartition(area.polygon, area.holes);
   }
 
+  /**
+   * Partition the provided areas.
+   * @private
+   * @param {Array.<Area>} areas - The areas to partition.
+   * @return {Array.<Poly>} - Polygons representing the partitioned
+   *   space.
+   */
+  NavMesh._geometry.partitionAreas = function(areas) {
+    var polys = areas.map(NavMesh._geometry.partitionArea);
+    return Array.prototype.concat.apply([], polys);
+  }
 
   /**
    * A point in ClipperLib is just an object with properties
@@ -1353,12 +1295,10 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @return {Poly} - The converted shape.
    */
   NavMesh._geometry.convertClipperToPoly = function(clip) {
-    var poly = new Poly();
-    poly.init(clip.length);
-    poly.points = clip.map(function(p) {
+    var points = clip.map(function(p) {
       return new Point(p.X, p.Y);
     });
-    return poly;
+    return new Poly(points);
   };
 
   /**
@@ -1384,6 +1324,44 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     shape.push({X: bounds.left, Y: bounds.top});
     shape.push({X: bounds.right, Y: bounds.top});
     return shape;
+  }
+
+  /**
+   * Holds utility methods needed by the navmesh.
+   * @private
+   */
+  NavMesh._util = {};
+
+  /**
+   * Removes and returns the items at the indices identified in
+   * `indices`.
+   * @param {Array} ary - The array to remove items from.
+   * @param {Array.<integer>} indices - The indices from which to
+   *   remove the items from in ary. Indices should be unique and
+   *   each should be less than the length of `ary` itself.
+   * @return {Array} - The items removed from ary.
+   */
+  NavMesh._util.splice = function(ary, indices) {
+    indices = indices.sort(NavMesh._util._numberCompare).reverse();
+    var removed = [];
+    indices.forEach(function(i) {
+      removed.push(ary.splice(i, 1)[0]);
+    });
+    return removed;
+  }
+
+  /**
+   * Comparison function for numbers.
+   * @private
+   */
+  NavMesh._util._numberCompare = function(a, b) {
+    if (a < b) {
+      return -1;
+    } else if (a > b) {
+      return 1;
+    } else {
+      return 0;
+    }
   }
 
   // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round
