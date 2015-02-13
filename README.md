@@ -1,5 +1,9 @@
 # TagPro NavMesh
 
+This library provides an interface for construction of a navigation mesh and pathfinding on that navigation mesh.
+
+## Usage
+
 For an example of creating and generating a path between two points, see `navmesh-example.html` in the `examples` directory.
 
 A NavMesh can be constructed by passing in the `tagpro.map` array directly.
@@ -30,4 +34,8 @@ This project is in development.
 * **examples**: Examples of usage.
 * **navmesh**: Source directory for project.
 * **tools**: Tools for building and generating map parsing definitions.
-    - **/build**: Scripts and instructions for generating built version of navmesh.
+    - **build**: Scripts and instructions for generating built version of navmesh.
+
+## Development
+
+Clone the project and run `npm install` to install the development dependencies. The project can be built using `grunt build`.

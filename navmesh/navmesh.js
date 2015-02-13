@@ -2,10 +2,12 @@
  * A NavMesh represents the traversable area of a map and gives
  * utilities for pathfinding.
  * Usage:
- *   // Assuming the 2d map tiles array is available:
- *   var navmesh = new NavMesh(map);
- *   navmesh.calculatePath(currentlocation, targetLocation, callback);
- * @module navmesh
+ * ```javascript
+ * // Assuming the 2d map tiles array is available:
+ * var navmesh = new NavMesh(map);
+ * navmesh.calculatePath(currentlocation, targetLocation, callback);
+ * ```
+ * @module NavMesh
  */
 define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './worker!./aStarWorker.js'],
 function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise) {
@@ -16,7 +18,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   
   /**
    * @constructor
-   * @alias module:navmesh
+   * @alias module:NavMesh
    * @param {MapTiles} map - The 2d array defining the map tiles.
    * @param {Logger} [logger] - The logger to use.
    */
@@ -97,6 +99,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Set up mesh-dynamic obstacles.
+   * @private
    */
   NavMesh.prototype._setupDynamicObstacles = function(obstacles) {
     // Holds tile id<->impassable (boolean) associations.
@@ -107,28 +110,28 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     this.idToObstacles = {};
 
     // Add polygons describing dynamic obstacles.
-    this.addObstaclePoly("bomb", this._getApproximateCircle(15));
-    this.addObstaclePoly("boost", this._getApproximateCircle(15));
-    this.addObstaclePoly("portal", this._getApproximateCircle(15));
-    this.addObstaclePoly("spike", this._getApproximateCircle(14));
-    this.addObstaclePoly("gate", this._getSquare(20));
-    this.addObstaclePoly("tile", this._getSquare(20));
-    this.addObstaclePoly("wall", this._getSquare(20));
-    this.addObstaclePoly("sewall", this._getDiagonal(20, "se"));
-    this.addObstaclePoly("newall", this._getDiagonal(20, "ne"));
-    this.addObstaclePoly("swwall", this._getDiagonal(20, "sw"));
-    this.addObstaclePoly("nwwall", this._getDiagonal(20, "nw"));
+    this._addObstaclePoly("bomb", this._getApproximateCircle(15));
+    this._addObstaclePoly("boost", this._getApproximateCircle(15));
+    this._addObstaclePoly("portal", this._getApproximateCircle(15));
+    this._addObstaclePoly("spike", this._getApproximateCircle(14));
+    this._addObstaclePoly("gate", this._getSquare(20));
+    this._addObstaclePoly("tile", this._getSquare(20));
+    this._addObstaclePoly("wall", this._getSquare(20));
+    this._addObstaclePoly("sewall", this._getDiagonal(20, "se"));
+    this._addObstaclePoly("newall", this._getDiagonal(20, "ne"));
+    this._addObstaclePoly("swwall", this._getDiagonal(20, "sw"));
+    this._addObstaclePoly("nwwall", this._getDiagonal(20, "nw"));
 
     // Add id<->type associations.
-    this.setObstacleType([10, 10.1], "bomb");
-    this.setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
-    this.setObstacleType([9, 9.1, 9.2, 9.3], "gate");
-    this.setObstacleType([1], "wall");
-    this.setObstacleType([1.1], "swwall");
-    this.setObstacleType([1.2], "nwwall");
-    this.setObstacleType([1.3], "newall");
-    this.setObstacleType([1.4], "sewall");
-    this.setObstacleType([7], "spike");
+    this._setObstacleType([10, 10.1], "bomb");
+    this._setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
+    this._setObstacleType([9, 9.1, 9.2, 9.3], "gate");
+    this._setObstacleType([1], "wall");
+    this._setObstacleType([1.1], "swwall");
+    this._setObstacleType([1.2], "nwwall");
+    this._setObstacleType([1.3], "newall");
+    this._setObstacleType([1.4], "sewall");
+    this._setObstacleType([7], "spike");
 
     // Set up obstacle state container. Holds whether position is
     // passable or not. Referenced using array location.
@@ -169,6 +172,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Get a polygonal approximation of a circle of a given radius
    * centered at the provided point. Vertices of polygon are in CW
    * order.
+   * @private
    * @param {number} radius - The radius for the polygon.
    * @param {Point} [point] - The point at which to center the polygon.
    *   If a point is not provided then the polygon is centered at the
@@ -250,8 +254,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Add poly definition for obstacle type.
    * edges should be relative to center of tile.
+   * @private
    */
-  NavMesh.prototype.addObstaclePoly = function(name, poly) {
+  NavMesh.prototype._addObstaclePoly = function(name, poly) {
     this.obstacleDefinitions[name] = poly;
   };
 
@@ -304,6 +309,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Update the navigation mesh to the given polys and call the update
    * functions. If no polys are provided then the update functions are
    * called with the current set of mesh polys.
+   * @private
    * @param {Array.<Poly>} [polys] - The new polys defining the nav mesh.
    */
   NavMesh.prototype._update = function(polys) {
@@ -323,6 +329,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   is included at the end of the path. If no path is found then
    *   null is passed to the callback.
    */
+
   /**
    * Calculate a path from the source point to the target point, invoking
    * the callback with the path after calculation.
@@ -367,11 +374,12 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Set the relationship between specific tile identifiers and the
    * polygons representing the shape of the obstacle they correspond
    * to.
+   * @private
    * @param {Array.<number>} ids - The tile ids to set as impassable.
    * @param {string} obstacle - The identifier for the polygon for the
    *   obstacles (already passed to addObstaclePoly).
    */
-  NavMesh.prototype.setObstacleType = function(ids, type) {
+  NavMesh.prototype._setObstacleType = function(ids, type) {
     ids.forEach(function(id) {
       this.idToObstacles[id] = type;
     }, this);
@@ -456,6 +464,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   original map array.
    * @property {(number|string)} v - The new value for the tile.
    */
+
   /**
    * Takes an array of tiles and updates the navigation mesh to reflect
    * the newly traversable area. This should be set as a listener to
@@ -550,16 +559,19 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
-   * Represents a point in space, doesn't necessarily need to be a
-   * `Point` object.
+   * Represents a point in space or a location in a 2d array.
    * @typedef PointLike
    * @type {object}
-   * @property {number} x - The x value for the point.
-   * @property {number} y - The y value for the point.
+   * @property {number} x - The `x` coordinate for the point, or row
+   *   for the array location.
+   * @property {number} y - The `y` coordinate for the point. or column
+   *   for the array location.
    */
+
   /**
    * Given an array location, return the world coordinate representing
    * the center point of the tile at that array location.
+   * @private
    * @param {PointLike} arrayLoc - The location in the map for the point.
    * @returm {Point} - The coordinates for the center of the location.
    */
@@ -574,6 +586,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Carry out the navmesh update for impassable dynamic obstacles that
    * have been removed from the navmesh.
+   * @private
    * @param {Array.<TileUpdate>} updates - The tile update information.
    */
   NavMesh.prototype._passableUpdate = function(updates) {
@@ -645,6 +658,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Carry out the navmesh update for impassable dynamic obstacles that
    * have been added to the navmesh.
+   * @private
    * @param {Array.<TileUpdate>} updates - The tile update information.
    */
   NavMesh.prototype._impassableUpdate = function(updates) {
@@ -704,6 +718,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Offsetting function for dynamic obstacles.
+   * @private
    * @param {Array.<Poly>} obstacles
    * @param {number} [offset=16]
    * @return {Array.<Poly>}
@@ -754,6 +769,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Get and remove the mesh polygons impacted by the addition of new
    * obstacles. The provided obstacles should already be offsetted.
+   * @private
    * @param {Array.<Poly>} obstacles - The offsetted obstacles to get
    *   the intersection of. Must be convex.
    * @return {Array.<Poly>} - The affected polys.
@@ -765,6 +781,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Get the impassable tiles bordering updated passable tiles.
+   * @private
    * @param {Array.<TileUpdate>} tiles - The updated passable tiles.
    * @return {Array.<ArrayLoc>} - The new array locations.
    */
@@ -843,6 +860,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    *   the shape.
    * @property {Array.<Poly>} holes - The holes of the shape.
    */
+
   /**
    * Offset the polygons such that there is a `offset` unit buffer
    * between the sides of the outline and around the obstacles. This
@@ -1035,11 +1053,13 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Initialized Clipper for operations.
+   * @type {ClipperLib.Clipper}
    */
   NavMesh._geometry.cpr = new ClipperLib.Clipper();
 
   /**
    * Initialized ClipperOffset for operations.
+   * @type {ClipperLib.ClipperOffset}
    */
   NavMesh._geometry.co = new ClipperLib.ClipperOffset();
 

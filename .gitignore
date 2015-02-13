@@ -1,2 +1,4 @@
 build/aStarWorker.js
 *.map
+node_modules
+doc

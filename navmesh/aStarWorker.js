@@ -54,7 +54,7 @@ function(   Pathfinder,     pp) {
    * Sends message to parent to be logged to console. Takes same
    * arguments as Bragi logger.
    * @param {string} group - The group to associate the message with.
-   * @param {*..} - arbitrary arguments to be passed back to the parent
+   * @param {...*} - arbitrary arguments to be passed back to the parent
    *   logging function.
    */
   Logger.log = function(group) {
@@ -65,15 +65,15 @@ function(   Pathfinder,     pp) {
 
   /**
    * Set up various actions to take on communication.
-   * Messages come in as arrays with the first element being a string identifier
-   * for the message type, and subsequent elements being arguments to be passed
-   * to the relevant function.
-   * Message types:
-   * * polys - sets the polygons to use for navigation
-   *     - {array} array of polygons defining the map
-   * * aStar - computes A* on above-set items
-   *     - {Point} start location to use for search
-   *     - {Point} end location to use for search
+   * @param {Array} e - An array with the first element being a string
+   *   identifier for the message type, and subsequent elements being
+   *   arguments to be passed to the relevant function. Message types:
+   *   * polys - sets the polygons to use for navigation
+   *       - {Array.<Poly>} array of polygons defining the map
+   *   * aStar - computes A* on above-set items
+   *       - {Point} start location to use for search
+   *       - {Point} end location to use for search
+   *   * isInitialized - check if the worker is initialized.
    */
   onmessage = function(e) {
     var data = e.data;

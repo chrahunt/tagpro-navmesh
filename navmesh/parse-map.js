@@ -1,5 +1,5 @@
 /**
- * @module map/parse
+ * @module MapParser
  */
 define(['./action-values', './polypartition'],
 function(  ActionValues,      pp) {
@@ -9,6 +9,7 @@ function(  ActionValues,      pp) {
   /**
    * Contains utilities for generating usable map representations from
    * map tiles.
+   * @alias module:MapParser
    */
   var MapParser = {};
 
@@ -501,8 +502,8 @@ function(  ActionValues,      pp) {
    * The returned value from the map parsing function.
    * @typedef ParsedMap
    * @type {object}
-   * @property {Array.<MPShape} walls - The parsed walls.
-   * @property {Array.<MPShape} obstacles - The parsed obstacles.
+   * @property {Array.<MPShape>} walls - The parsed walls.
+   * @property {Array.<MPShape>} obstacles - The parsed obstacles.
    */
 
   /**
