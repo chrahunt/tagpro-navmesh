@@ -1,9 +1,17 @@
+/**
+ * Holds classes for points, polygons, and utilities for operating on
+ * them.
+ * @module PolyPartition
+ */
 define(["./lib/poly2tri"],
 function(poly2tri) {
   // Adapted/copied from https://code.google.com/p/polypartition/
   var exports = {};
-  /*
+  /**
    * A point can represent a vertex in a 2d environment or a vector.
+   * @constructor
+   * @param {number} x - The `x` coordinate of the point.
+   * @param {number} y - The `y` coordinate of the point.
    */
   Point = function(x, y) {
     this.x = x;
@@ -55,6 +63,12 @@ function(poly2tri) {
     return new Point(this.x - p.x, this.y - p.y);
   }
 
+  /**
+   * Takes a scalar value and multiplies each parameter of the point
+   * by the scalar.
+   * @param  {number} f - The number to multiple the parameters by.
+   * @return {Point} - A new point with the calculated coordinates.
+   */
   Point.prototype.mul = function(f) {
     return new Point(this.x * f, this.y * f);
   }

@@ -48,214 +48,54 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     this._init(polys);
   };
 
-  // Make utilities in polypartition available without requiring
-  // that it be included in external scripts.
-  NavMesh.geom = pp;
+  /**
+   * Callback for path calculation requests.
+   * @callback PathCallback
+   * @param {?Array.<PointLike>} - The calculated path. The goal point
+   *   is included at the end of the path. If no path is found then
+   *   null is passed to the callback.
+   */
 
   /**
-   * Initialize the navigation mesh with the polygons describing the
-   * map elements.
-   * @private
-   * @param {ParsedMap} - The map information parsed into polygons.
+   * Calculate a path from the source point to the target point, invoking
+   * the callback with the path after calculation.
+   * @param {PointLike} source - The start location of the search.
+   * @param {PointLike} target - The target of the search.
+   * @param {PathCallback} callback - The callback function invoked
+   *   when the path has been calculated.
    */
-  NavMesh.prototype._init = function(parsedMap) {
-    // Save original parsed map polys.
-    this.parsedMap = parsedMap;
+  NavMesh.prototype.calculatePath = function(source, target, callback) {
+    this.logger.log("navmesh:debug", "Calculating path.");
 
-    // Static objects relative to the navmesh.
-    var navigation_static_objects = {
-      walls: parsedMap.walls,
-      obstacles: parsedMap.static_obstacles
-    }
-    var navigation_dynamic_objects = parsedMap.dynamic_obstacles;
-
-    // Offset polys from side so they represent traversable area.
-    var areas = this._offsetPolys(navigation_static_objects);
-
-    this.polys = areas.map(NavMesh._geometry.partitionArea);
-    // Flatten array.
-    this.polys = Array.prototype.concat.apply([], this.polys);
-
-    if (!this.worker) {
-      this.pathfinder = new Pathfinder(this.polys);
-    }
-
-    this._setupDynamicObstacles(navigation_dynamic_objects);
-
-    // Keep track of original polygons, generate their edges in advance.
-    //this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
-    this.obstacle_edges = [];
-    //this.original_polys.forEach(function(poly) {
-    areas.forEach(function(area) {
-      var polys = [area.polygon].concat(area.holes);
-      polys.forEach(function(poly) {
-        for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
-          this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
-        }
-      }, this);
-    }, this);
-    this.initialized = true;
-  }
-
-  /**
-   * Set up mesh-dynamic obstacles.
-   * @private
-   */
-  NavMesh.prototype._setupDynamicObstacles = function(obstacles) {
-    // Holds tile id<->impassable (boolean) associations.
-    this.impassable = {};
-    // Polygons defining obstacles.
-    this.obstacleDefinitions = {};
-    // Relation between ids and obstacles.
-    this.idToObstacles = {};
-
-    // Add polygons describing dynamic obstacles.
-    this._addObstaclePoly("bomb", this._getApproximateCircle(15));
-    this._addObstaclePoly("boost", this._getApproximateCircle(15));
-    this._addObstaclePoly("portal", this._getApproximateCircle(15));
-    this._addObstaclePoly("spike", this._getApproximateCircle(14));
-    this._addObstaclePoly("gate", this._getSquare(20));
-    this._addObstaclePoly("tile", this._getSquare(20));
-    this._addObstaclePoly("wall", this._getSquare(20));
-    this._addObstaclePoly("sewall", this._getDiagonal(20, "se"));
-    this._addObstaclePoly("newall", this._getDiagonal(20, "ne"));
-    this._addObstaclePoly("swwall", this._getDiagonal(20, "sw"));
-    this._addObstaclePoly("nwwall", this._getDiagonal(20, "nw"));
-
-    // Add id<->type associations.
-    this._setObstacleType([10, 10.1], "bomb");
-    this._setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
-    this._setObstacleType([9, 9.1, 9.2, 9.3], "gate");
-    this._setObstacleType([1], "wall");
-    this._setObstacleType([1.1], "swwall");
-    this._setObstacleType([1.2], "nwwall");
-    this._setObstacleType([1.3], "newall");
-    this._setObstacleType([1.4], "sewall");
-    this._setObstacleType([7], "spike");
-
-    // Set up obstacle state container. Holds whether position is
-    // passable or not. Referenced using array location.
-    this.obstacle_state = {};
-
-    // Location of dynamic obstacles.
-    this.dynamic_obstacle_locations = [];
-
-    // Container to hold initial obstacle states.
-    var initial_states = [];
-    obstacles.forEach(function(obstacle) {
-      // Initialize obstacle states to all be passable.
-      this.obstacle_state[Point.toString(obstacle)] = true;
-      this.dynamic_obstacle_locations.push(Point.fromPointLike(obstacle));
-      initial_states.push(obstacle);
-    }, this);
-
-    // Set up already-known dynamic impassable values.
-    this.setImpassable([10, 5, 14, 15, 9.1]);
-    // Walls and spikes.
-    this.setImpassable([1, 1.1, 1.2, 1.3, 1.4, 7]);
-
-    // Initialize mapupdate with already-present dynamic obstacles.
-    this.mapUpdate(initial_states);
-  };
-
-  /**
-   * Get a polygonal approximation of a circle of a given radius
-   * centered at the provided point. Vertices of polygon are in CW
-   * order.
-   * @private
-   * @param {number} radius - The radius for the polygon.
-   * @param {Point} [point] - The point at which to center the polygon.
-   *   If a point is not provided then the polygon is centered at the
-   *   origin.
-   * @return {Poly} - The approximated circle.
-   */
-  NavMesh.prototype._getApproximateCircle = function(radius, point) {
-    var x, y;
-    if (point) {
-      x = point.x;
-      y = point.y;
+    // Use web worker if present.
+    if (this.worker && this.workerInitialized) {
+      this.logger.log("navmesh:debug", "Using worker to calculate path.");
+      this.worker.postMessage(["aStar", source, target]);
+      // Set callback so it is accessible when results are sent back.
+      this.lastCallback = callback;
     } else {
-      x = 0;
-      y = 0;
+      source = Point.fromPointLike(source);
+      target = Point.fromPointLike(target);
+      path = this.pathfinder.aStar(source, target);
+      if (typeof path !== 'undefined' && path) {
+        // Remove first entry, which is current position.
+        path = path.slice(1);
+      }
+      callback(path);
     }
-    var offset = radius * Math.tan(Math.PI / 8);
-    offset = Math.round10(offset, -1);
-    var poly = new Poly([
-      new Point(x - radius, y - offset),
-      new Point(x - radius, y + offset),
-      new Point(x - offset, y + radius),
-      new Point(x + offset, y + radius),
-      new Point(x + radius, y + offset),
-      new Point(x + radius, y - offset),
-      new Point(x + offset, y - radius),
-      new Point(x - offset, y - radius)
-    ]);
-    return poly;
   };
 
   /**
-   * Returns a square with side length given by double the provided
-   * radius, centered at the origin. Vertices of polygon are in CW
-   * order.
-   * @private
-   * @param {number} radius - The length of half of one side.
-   * @return {Poly} - The constructed square.
+   * Check whether one point is visible from another, without being
+   * blocked by walls or (currently) spikes.
+   * @param {} p1 - The first point.
+   * @param {} p2 - The second point.
+   * @return {boolean} - Whether `p1` is visible from `p2`.
    */
-  NavMesh.prototype._getSquare = function(radius) {
-    var poly = new Poly([
-      new Point(-radius, radius),
-      new Point(radius, radius),
-      new Point(radius, -radius),
-      new Point(-radius, -radius)
-    ]);
-    return poly;
-  };
-
-  /**
-   * Get the upper or lower diagonal of a square of the given
-   * radius. 
-   * @private
-   * @param {number} radius - The length of half of one side of the
-   *   square to get the diagonal of.
-   * @param {string} corner - One of ne, se, nw, sw indicating which
-   *   corner should be filled.
-   * @return {Poly} - The diagonal shape.
-   */
-  NavMesh.prototype._getDiagonal = function(radius, corner) {
-    var types = {
-      "ne": [[radius, -radius], [radius, radius], [-radius, -radius]],
-      "se": [[radius, radius], [-radius, radius], [radius, -radius]],
-      "sw": [[-radius, radius], [-radius, -radius], [radius, radius]],
-      "nw": [[-radius, -radius], [radius, -radius], [-radius, radius]]
-    };
-    var points = types[corner].map(function(mul) {
-      return new Point(mul[0], mul[1]);
-    });
-    return new Poly(points);
-  };
-
-  /**
-   * Add poly definition for obstacle type.
-   * edges should be relative to center of tile.
-   * @private
-   */
-  NavMesh.prototype._addObstaclePoly = function(name, poly) {
-    this.obstacleDefinitions[name] = poly;
-  };
-
-  /**
-   * Retrieve the polygon for a given obstacle id.
-   * @private
-   * @param {number} id - The id to retrieve the obstacle polygon for.
-   * @return {Poly} - The polygon representing the obstacle.
-   */
-  NavMesh.prototype._getObstaclePoly = function(id) {
-    var poly = this.obstacleDefinitions[this.idToObstacles[id]]
-    if (poly) {
-      return poly.clone();
-    } else {
-      this.logger.log("navmesh:debug", "No poly found for id:", id);
-    }
+  NavMesh.prototype.checkVisible = function(p1, p2) {
+    var edge = new Edge(p1, p2);
+    var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
+    return !blocked;
   };
 
   /**
@@ -271,176 +111,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       setTimeout(function() {
         this.onInit(fn);
       }.bind(this), 10);
-    }
-  };
-
-  /**
-   * A function called when the navigation mesh updates.
-   * @callback UpdateCallback
-   * @param {Array.<Poly>} - The polys defining the current navigation
-   *   mesh.
-   * @param {Array.<Poly>} - The polys that were added to the mesh.
-   * @param {Array.<integer>} - The indices of the polys that were
-   *   removed from the mesh.
-   */
-  /**
-   * Register a function to be called when the navigation mesh updates.
-   * @param {UpdateCallback} fn - The function to be called.
-   */
-  NavMesh.prototype.onUpdate = function(fn) {
-    this.updateFuncs.push(fn);
-  };
-
-  /**
-   * Update the navigation mesh to the given polys and call the update
-   * functions. If no polys are provided then the update functions are
-   * called with the current set of mesh polys.
-   * @private
-   * @param {Array.<Poly>} polys - The new polys defining the nav mesh.
-   * @param {Array.<Poly>} added - The polys that were added to the mesh.
-   * @param {Array.<integer>} removed - The indices of the polys that were
-   *   removed from the mesh.
-   */
-  NavMesh.prototype._update = function(polys, added, removed) {
-    this.polys = polys;
-    this.updateFuncs.forEach(function(fn) {
-      setTimeout(function() {
-        fn(this.polys, added, removed);
-      }.bind(this), 0);
-    }, this);
-  };
-
-  /**
-   * Callback for path calculation requests.
-   * @callback PathCallback
-   * @param {?Array.<Point>} - The calculated path, the first Point
-   *   of which should be the target of any navigation. The goal Point
-   *   is included at the end of the path. If no path is found then
-   *   null is passed to the callback.
-   */
-
-  /**
-   * Calculate a path from the source point to the target point, invoking
-   * the callback with the path after calculation.
-   * @param {Point} source - The start location of the search.
-   * @param {Point} target - The target of the search.
-   * @param {PathCallback} callback - The callback function invoked
-   *   when the path has been calculated.
-   */
-  NavMesh.prototype.calculatePath = function(source, target, callback) {
-    this.logger.log("navmesh:debug", "Calculating path.");
-
-    // Use web worker if present.
-    if (this.worker && this.workerInitialized) {
-      this.logger.log("navmesh:debug", "Using worker to calculate path.");
-      this.worker.postMessage(["aStar", source, target]);
-      // Set callback so it is accessible when results are sent back.
-      this.lastCallback = callback;
-    } else {
-      path = this.pathfinder.aStar(source, target);
-      if (typeof path !== 'undefined' && path) {
-        // Remove first entry, which is current position.
-        path = path.slice(1);
-      }
-      callback(path);
-    }
-  }
-
-  /**
-   * Check whether one point is visible from another, without being
-   * blocked by walls or (currently) spikes.
-   * @param {} p1 - The first point.
-   * @param {} p2 - The second point.
-   * @return {boolean} - Whether `p1` is visible from `p2`.
-   */
-  NavMesh.prototype.checkVisible = function(p1, p2) {
-    var edge = new Edge(p1, p2);
-    var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
-    return !blocked;
-  }
-
-  /**
-   * Set the relationship between specific tile identifiers and the
-   * polygons representing the shape of the obstacle they correspond
-   * to.
-   * @private
-   * @param {Array.<number>} ids - The tile ids to set as impassable.
-   * @param {string} obstacle - The identifier for the polygon for the
-   *   obstacles (already passed to addObstaclePoly).
-   */
-  NavMesh.prototype._setObstacleType = function(ids, type) {
-    ids.forEach(function(id) {
-      this.idToObstacles[id] = type;
-    }, this);
-  };
-
-  /**
-   * Set specific tile identifiers as impassable to the agent.
-   * @param {Array.<number>} ids - The tile ids to set as impassable.
-   * @param {string} obstacle - The identifier for the polygon for the
-   *   obstacles (already passed to addObstaclePoly).
-   */
-  NavMesh.prototype.setImpassable = function(ids) {
-    // Remove ids already set as impassable.
-    ids = ids.filter(function(id) {
-      return this._isPassable(id);
-    }, this);
-    this.logger.log("navmesh:debug", "Ids passed:", ids);
-
-    var updates = [];
-    // Check if any of the dynamic tiles have the values passed.
-    this.dynamic_obstacle_locations.forEach(function(loc) {
-      var idx = ids.indexOf(this.map[loc.x][loc.y]);
-      if (idx !== -1) {
-        updates.push({
-          x: loc.x,
-          y: loc.y,
-          v: ids[idx]
-        });
-      }
-    }, this);
-
-    // Add to list of impassable tiles.
-    ids.forEach(function(id) {
-      this.impassable[id] = true;
-    }, this);
-    this.logger.log("Impassable after update:", this.impassable);
-
-    if (updates.length > 0) {
-      this.mapUpdate(updates);
-    }
-  };
-
-  /**
-   * Remove tile identifiers from set of impassable tile types.
-   * @param {Array.<number>} ids - The tile ids to set as traversable.
-   */
-  NavMesh.prototype.removeImpassable = function(ids) {
-    // Remove ids not set as impassable.
-    ids = ids.filter(function(id) {
-      return !this._isPassable(id);
-    }, this);
-
-    var updates = [];
-    // Check if any of the dynamic tiles have the values passed.
-    this.dynamic_obstacle_locations.forEach(function(loc) {
-      var idx = ids.indexOf(this.map[loc.x][loc.y]);
-      if (idx !== -1) {
-        updates.push({
-          x: loc.x,
-          y: loc.y,
-          v: ids[idx]
-        });
-      }
-    }, this);
-
-    // Remove from list of impassable tiles.
-    ids.forEach(function(id) {
-      this.impassable[id] = false;
-    }, this);
-
-    if (updates.length > 0) {
-      this.mapUpdate(updates);
     }
   };
 
@@ -521,6 +191,259 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
         this._impassableUpdate(updates);
       }
     }
+  };
+
+  /**
+   * A function called when the navigation mesh updates.
+   * @callback UpdateCallback
+   * @param {Array.<Poly>} - The polys defining the current navigation
+   *   mesh.
+   * @param {Array.<Poly>} - The polys that were added to the mesh.
+   * @param {Array.<integer>} - The indices of the polys that were
+   *   removed from the mesh.
+   */
+
+  /**
+   * Register a function to be called when the navigation mesh updates.
+   * @param {UpdateCallback} fn - The function to be called.
+   */
+  NavMesh.prototype.onUpdate = function(fn) {
+    this.updateFuncs.push(fn);
+  };
+
+  /**
+   * Set specific tile identifiers as impassable to the agent.
+   * @param {Array.<number>} ids - The tile ids to set as impassable.
+   * @param {string} obstacle - The identifier for the polygon for the
+   *   obstacles (already passed to addObstaclePoly).
+   */
+  NavMesh.prototype.setImpassable = function(ids) {
+    // Remove ids already set as impassable.
+    ids = ids.filter(function(id) {
+      return this._isPassable(id);
+    }, this);
+    this.logger.log("navmesh:debug", "Ids passed:", ids);
+
+    var updates = [];
+    // Check if any of the dynamic tiles have the values passed.
+    this.dynamic_obstacle_locations.forEach(function(loc) {
+      var idx = ids.indexOf(this.map[loc.x][loc.y]);
+      if (idx !== -1) {
+        updates.push({
+          x: loc.x,
+          y: loc.y,
+          v: ids[idx]
+        });
+      }
+    }, this);
+
+    // Add to list of impassable tiles.
+    ids.forEach(function(id) {
+      this.impassable[id] = true;
+    }, this);
+    this.logger.log("Impassable after update:", this.impassable);
+
+    if (updates.length > 0) {
+      this.mapUpdate(updates);
+    }
+  };
+
+  /**
+   * Remove tile identifiers from set of impassable tile types.
+   * @param {Array.<number>} ids - The tile ids to set as traversable.
+   */
+  NavMesh.prototype.removeImpassable = function(ids) {
+    // Remove ids not set as impassable.
+    ids = ids.filter(function(id) {
+      return !this._isPassable(id);
+    }, this);
+
+    var updates = [];
+    // Check if any of the dynamic tiles have the values passed.
+    this.dynamic_obstacle_locations.forEach(function(loc) {
+      var idx = ids.indexOf(this.map[loc.x][loc.y]);
+      if (idx !== -1) {
+        updates.push({
+          x: loc.x,
+          y: loc.y,
+          v: ids[idx]
+        });
+      }
+    }, this);
+
+    // Remove from list of impassable tiles.
+    ids.forEach(function(id) {
+      this.impassable[id] = false;
+    }, this);
+
+    if (updates.length > 0) {
+      this.mapUpdate(updates);
+    }
+  };
+
+  /**
+   * Initialize the navigation mesh with the polygons describing the
+   * map elements.
+   * @private
+   * @param {ParsedMap} - The map information parsed into polygons.
+   */
+  NavMesh.prototype._init = function(parsedMap) {
+    // Save original parsed map polys.
+    this.parsedMap = parsedMap;
+
+    // Static objects relative to the navmesh.
+    var navigation_static_objects = {
+      walls: parsedMap.walls,
+      obstacles: parsedMap.static_obstacles
+    }
+    var navigation_dynamic_objects = parsedMap.dynamic_obstacles;
+
+    // Offset polys from side so they represent traversable area.
+    var areas = this._offsetPolys(navigation_static_objects);
+
+    this.polys = areas.map(NavMesh._geometry.partitionArea);
+    // Flatten array.
+    this.polys = Array.prototype.concat.apply([], this.polys);
+
+    if (!this.worker) {
+      this.pathfinder = new Pathfinder(this.polys);
+    }
+
+    this._setupDynamicObstacles(navigation_dynamic_objects);
+
+    // Keep track of original polygons, generate their edges in advance.
+    //this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
+    this.obstacle_edges = [];
+    //this.original_polys.forEach(function(poly) {
+    areas.forEach(function(area) {
+      var polys = [area.polygon].concat(area.holes);
+      polys.forEach(function(poly) {
+        for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
+          this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
+        }
+      }, this);
+    }, this);
+    this.initialized = true;
+  };
+
+  /**
+   * Set up mesh-dynamic obstacles.
+   * @private
+   */
+  NavMesh.prototype._setupDynamicObstacles = function(obstacles) {
+    // Holds tile id<->impassable (boolean) associations.
+    this.impassable = {};
+    // Polygons defining obstacles.
+    this.obstacleDefinitions = {};
+    // Relation between ids and obstacles.
+    this.idToObstacles = {};
+
+    var geo = NavMesh._geometry;
+
+    // Add polygons describing dynamic obstacles.
+    this._addObstaclePoly("bomb", geo.getApproximateCircle(15));
+    this._addObstaclePoly("boost", geo.getApproximateCircle(15));
+    this._addObstaclePoly("portal", geo.getApproximateCircle(15));
+    this._addObstaclePoly("spike", geo.getApproximateCircle(14));
+    this._addObstaclePoly("gate", geo.getSquare(20));
+    this._addObstaclePoly("tile", geo.getSquare(20));
+    this._addObstaclePoly("wall", geo.getSquare(20));
+    this._addObstaclePoly("sewall", geo.getDiagonal(20, "se"));
+    this._addObstaclePoly("newall", geo.getDiagonal(20, "ne"));
+    this._addObstaclePoly("swwall", geo.getDiagonal(20, "sw"));
+    this._addObstaclePoly("nwwall", geo.getDiagonal(20, "nw"));
+
+    // Add id<->type associations.
+    this._setObstacleType([10, 10.1], "bomb");
+    this._setObstacleType([5, 5.1, 14, 14.1, 15, 15.1], "boost");
+    this._setObstacleType([9, 9.1, 9.2, 9.3], "gate");
+    this._setObstacleType([1], "wall");
+    this._setObstacleType([1.1], "swwall");
+    this._setObstacleType([1.2], "nwwall");
+    this._setObstacleType([1.3], "newall");
+    this._setObstacleType([1.4], "sewall");
+    this._setObstacleType([7], "spike");
+
+    // Set up obstacle state container. Holds whether position is
+    // passable or not. Referenced using array location.
+    this.obstacle_state = {};
+
+    // Location of dynamic obstacles.
+    this.dynamic_obstacle_locations = [];
+
+    // Container to hold initial obstacle states.
+    var initial_states = [];
+    obstacles.forEach(function(obstacle) {
+      // Initialize obstacle states to all be passable.
+      this.obstacle_state[Point.toString(obstacle)] = true;
+      this.dynamic_obstacle_locations.push(Point.fromPointLike(obstacle));
+      initial_states.push(obstacle);
+    }, this);
+
+    // Set up already-known dynamic impassable values.
+    this.setImpassable([10, 5, 14, 15, 9.1]);
+    // Walls and spikes.
+    this.setImpassable([1, 1.1, 1.2, 1.3, 1.4, 7]);
+
+    // Initialize mapupdate with already-present dynamic obstacles.
+    this.mapUpdate(initial_states);
+  };
+
+  /**
+   * Add poly definition for obstacle type.
+   * edges should be relative to center of tile.
+   * @private
+   */
+  NavMesh.prototype._addObstaclePoly = function(name, poly) {
+    this.obstacleDefinitions[name] = poly;
+  };
+
+  /**
+   * Retrieve the polygon for a given obstacle id.
+   * @private
+   * @param {number} id - The id to retrieve the obstacle polygon for.
+   * @return {Poly} - The polygon representing the obstacle.
+   */
+  NavMesh.prototype._getObstaclePoly = function(id) {
+    var poly = this.obstacleDefinitions[this.idToObstacles[id]]
+    if (poly) {
+      return poly.clone();
+    } else {
+      this.logger.log("navmesh:debug", "No poly found for id:", id);
+    }
+  };
+
+  /**
+   * Update the navigation mesh to the given polys and call the update
+   * functions.
+   * @private
+   * @param {Array.<Poly>} polys - The new polys defining the nav mesh.
+   * @param {Array.<Poly>} added - The polys that were added to the mesh.
+   * @param {Array.<integer>} removed - The indices of the polys that were
+   *   removed from the mesh.
+   */
+  NavMesh.prototype._update = function(polys, added, removed) {
+    this.polys = polys;
+    this.updateFuncs.forEach(function(fn) {
+      setTimeout(function() {
+        fn(this.polys, added, removed);
+      }.bind(this), 0);
+    }, this);
+  };
+
+  /**
+   * Set the relationship between specific tile identifiers and the
+   * polygons representing the shape of the obstacle they correspond
+   * to.
+   * @private
+   * @param {Array.<number>} ids - The tile ids to set as impassable.
+   * @param {string} obstacle - The identifier for the polygon for the
+   *   obstacles (already passed to addObstaclePoly).
+   */
+  NavMesh.prototype._setObstacleType = function(ids, type) {
+    ids.forEach(function(id) {
+      this.idToObstacles[id] = type;
+    }, this);
   };
 
   /**
@@ -1031,22 +954,28 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
         if (path) {
           // Convert Path back to points.
-          path = path.map(function(location) {
+          /*path = path.map(function(location) {
             return new Point(location.x, location.y);
-          });
+          });*/
           // Remove first entry, which is current position.
           path = path.slice(1);
         }
         this.lastCallback(path);
       } else if (name == "initialized") {
         this.workerInitialized = true;
-        // Sent parsed map polygons to worker when available.
+        // Send parsed map polygons to worker when available.
         this.onInit(function() {
           this.worker.postMessage(["polys", this.polys]);
         }.bind(this));
       }
     }.bind(this);
   };
+
+  /**
+   * Make utilities in polypartition available without requiring
+   * that it be included in external scripts.
+   */
+  NavMesh.poly = pp;
 
   /**
    * Hold methods used for generating the navigation mesh.
@@ -1069,6 +998,79 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   // Defaults.
   NavMesh._geometry.co.MiterLimit = 2;
   NavMesh._geometry.scale = 100;
+
+  /**
+   * Get a polygonal approximation of a circle of a given radius
+   * centered at the provided point. Vertices of polygon are in CW
+   * order.
+   * @param {number} radius - The radius for the polygon.
+   * @param {Point} [point] - The point at which to center the polygon.
+   *   If a point is not provided then the polygon is centered at the
+   *   origin.
+   * @return {Poly} - The approximated circle.
+   */
+  NavMesh._geometry.getApproximateCircle = function(radius, point) {
+    var x, y;
+    if (point) {
+      x = point.x;
+      y = point.y;
+    } else {
+      x = 0;
+      y = 0;
+    }
+    var offset = radius * Math.tan(Math.PI / 8);
+    offset = Math.round10(offset, -1);
+    var poly = new Poly([
+      new Point(x - radius, y - offset),
+      new Point(x - radius, y + offset),
+      new Point(x - offset, y + radius),
+      new Point(x + offset, y + radius),
+      new Point(x + radius, y + offset),
+      new Point(x + radius, y - offset),
+      new Point(x + offset, y - radius),
+      new Point(x - offset, y - radius)
+    ]);
+    return poly;
+  };
+
+  /**
+   * Returns a square with side length given by double the provided
+   * radius, centered at the origin. Vertices of polygon are in CW
+   * order.
+   * @param {number} radius - The length of half of one side.
+   * @return {Poly} - The constructed square.
+   */
+  NavMesh._geometry.getSquare = function(radius) {
+    var poly = new Poly([
+      new Point(-radius, radius),
+      new Point(radius, radius),
+      new Point(radius, -radius),
+      new Point(-radius, -radius)
+    ]);
+    return poly;
+  };
+
+  /**
+   * Get the upper or lower diagonal of a square of the given
+   * radius. 
+   * @param {number} radius - The length of half of one side of the
+   *   square to get the diagonal of.
+   * @param {string} corner - One of ne, se, nw, sw indicating which
+   *   corner should be filled.
+   * @return {Poly} - The diagonal shape.
+   */
+  NavMesh._geometry.getDiagonal = function(radius, corner) {
+    var types = {
+      "ne": [[radius, -radius], [radius, radius], [-radius, -radius]],
+      "se": [[radius, radius], [-radius, radius], [radius, -radius]],
+      "sw": [[-radius, radius], [-radius, -radius], [radius, radius]],
+      "nw": [[-radius, -radius], [radius, -radius], [-radius, radius]]
+    };
+    var points = types[corner].map(function(mul) {
+      return new Point(mul[0], mul[1]);
+    });
+    return new Poly(points);
+  };
 
   /**
    * Given two sets of polygons, return indices of the ones in the blue

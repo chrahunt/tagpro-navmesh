@@ -48,9 +48,9 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
 
   // Convert and generate navmesh.
   var navmesh = new NavMesh(tiles, Logger);
-  var Point = NavMesh.geom.Point;
-  var Poly = NavMesh.geom.Poly;
-  var PolyUtils = NavMesh.geom.PolyUtils;
+  var Point = NavMesh.poly.Point;
+  var Poly = NavMesh.poly.Poly;
+  var PolyUtils = NavMesh.poly.PolyUtils;
 
   var canvas = document.getElementById('c');
   DrawUtils.initCanvasForTiles(canvas, tiles);
