@@ -63,6 +63,27 @@ function(   Pathfinder,     pp) {
     postMessage(message);
   }
 
+  var Util = {};
+  
+  Util.splice = function(ary, indices) {
+    indices = indices.sort(Util._numberCompare).reverse();
+    var removed = [];
+    indices.forEach(function(i) {
+      removed.push(ary.splice(i, 1)[0]);
+    });
+    return removed;
+  }
+
+  Util._numberCompare = function(a, b) {
+    if (a < b) {
+      return -1;
+    } else if (a > b) {
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
   /**
    * Set up various actions to take on communication.
    * @param {Array} e - An array with the first element being a string
@@ -78,12 +99,22 @@ function(   Pathfinder,     pp) {
   onmessage = function(e) {
     var data = e.data;
     var name = data[0];
-    Logger.log("worker:debug", "Message received to worker:", data);
+    Logger.log("worker:debug", "Message received by worker:", data);
     if (name == "polys") {
       // Polygons defining map.
       self.polys = data[1].map(Convert.toPoly);
 
       // Initialize pathfinder module.
+      self.pathfinder = new Pathfinder(self.polys);
+    } else if (name == "polyUpdate") {
+      // Update to navmesh.
+      var newPolys = data[1].map(Convert.toPoly);
+      var removedPolys = data[2];
+
+      Util.splice(self.polys, removedPolys);
+      Array.prototype.push.apply(self.polys, newPolys);
+
+      // Re-initialize pathfinder.
       self.pathfinder = new Pathfinder(self.polys);
     } else if (name == "aStar") {
       var source = Convert.toPoint(data[1]);

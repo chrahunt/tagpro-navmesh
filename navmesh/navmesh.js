@@ -149,16 +149,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       initial_states.push(obstacle);
     }, this);
 
-    // Set up callback to update worker.
-    this.onUpdate(function(polys) {
-      if (this.worker) {
-        this.worker.postMessage(["polys", polys]);
-      } else {
-        this.logger.log("navmesh:debug", "Worker not loaded yet.");
-      }
-    }.bind(this));
-
-    this.logger.log("navmesh:debug", "impassable pre-update:", this.impassable);
     // Set up already-known dynamic impassable values.
     this.setImpassable([10, 5, 14, 15, 9.1]);
     // Walls and spikes.
@@ -180,34 +170,27 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @return {Poly} - The approximated circle.
    */
   NavMesh.prototype._getApproximateCircle = function(radius, point) {
-    if(!this.hasOwnProperty("approximations")) {
-      this.approximations = {};
-      this.approximations.circle = {};
+    var x, y;
+    if (point) {
+      x = point.x;
+      y = point.y;
+    } else {
+      x = 0;
+      y = 0;
     }
-    if (!this.approximations.circle[radius]) {
-      var x, y;
-      if (point) {
-        x = point.x;
-        y = point.y;
-      } else {
-        x = 0;
-        y = 0;
-      }
-      var offset = radius * Math.tan(Math.PI / 8);
-      offset = Math.round10(offset, -1);
-      var poly = new Poly([
-        new Point(x - radius, y - offset),
-        new Point(x - radius, y + offset),
-        new Point(x - offset, y + radius),
-        new Point(x + offset, y + radius),
-        new Point(x + radius, y + offset),
-        new Point(x + radius, y - offset),
-        new Point(x + offset, y - radius),
-        new Point(x - offset, y - radius)
-      ]);
-      this.approximations.circle[radius] = poly;
-    }
-    return this.approximations.circle[radius].clone();
+    var offset = radius * Math.tan(Math.PI / 8);
+    offset = Math.round10(offset, -1);
+    var poly = new Poly([
+      new Point(x - radius, y - offset),
+      new Point(x - radius, y + offset),
+      new Point(x - offset, y + radius),
+      new Point(x + offset, y + radius),
+      new Point(x + radius, y + offset),
+      new Point(x + radius, y - offset),
+      new Point(x + offset, y - radius),
+      new Point(x - offset, y - radius)
+    ]);
+    return poly;
   };
 
   /**
@@ -294,8 +277,11 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * A function called when the navigation mesh updates.
    * @callback UpdateCallback
-   * @param {Array.<Poly>} - The new polys defining the navigation
+   * @param {Array.<Poly>} - The polys defining the current navigation
    *   mesh.
+   * @param {Array.<Poly>} - The polys that were added to the mesh.
+   * @param {Array.<integer>} - The indices of the polys that were
+   *   removed from the mesh.
    */
   /**
    * Register a function to be called when the navigation mesh updates.
@@ -310,14 +296,17 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * functions. If no polys are provided then the update functions are
    * called with the current set of mesh polys.
    * @private
-   * @param {Array.<Poly>} [polys] - The new polys defining the nav mesh.
+   * @param {Array.<Poly>} polys - The new polys defining the nav mesh.
+   * @param {Array.<Poly>} added - The polys that were added to the mesh.
+   * @param {Array.<integer>} removed - The indices of the polys that were
+   *   removed from the mesh.
    */
-  NavMesh.prototype._update = function(polys) {
-    if (polys) {
-      this.polys = polys;
-    }
+  NavMesh.prototype._update = function(polys, added, removed) {
+    this.polys = polys;
     this.updateFuncs.forEach(function(fn) {
-      fn(this.polys);
+      setTimeout(function() {
+        fn(this.polys, added, removed);
+      }.bind(this), 0);
     }, this);
   };
 
@@ -629,7 +618,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     var passablePartition = NavMesh._geometry.partitionAreas(passableAreas);
 
     // Get mesh polys intersected by offsetted passable area.
-    var intersectedMeshPolys = this._getIntersectedPolys(passablePartition);
+    var intersection = this._getIntersectedPolys(passablePartition);
+    var intersectedMeshPolys = intersection.polys;
 
     // Create outline with matched mesh polys.
     intersectedMeshPolys = intersectedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
@@ -652,7 +642,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     var newPolys = NavMesh._geometry.partitionAreas(meshAreas);
     Array.prototype.push.apply(this.polys, newPolys);
 
-    this._update();
+    this._update(this.polys, newPolys, intersection.indices);
   };
 
   /**
@@ -677,7 +667,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     var obstaclePartition = NavMesh._geometry.partitionAreas(obstacleAreas);
 
     // Get mesh polys intersected by offsetted obstacles.
-    var intersectedMeshPolys = this._getIntersectedPolys(obstaclePartition);
+    var intersection = this._getIntersectedPolys(obstaclePartition);
+    var intersectedMeshPolys = intersection.polys;
 
     // Create outline with matched mesh polys.
     intersectedMeshPolys = intersectedMeshPolys.map(NavMesh._geometry.convertPolyToClipper);
@@ -713,7 +704,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Add to existing polygons.
     Array.prototype.push.apply(this.polys, polys);
 
-    this._update();
+    this._update(this.polys, polys, intersection.indices);
   };
 
   /**
@@ -776,7 +767,10 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    */
   NavMesh.prototype._getIntersectedPolys = function(obstacles) {
     var intersectedIndices = NavMesh._geometry.getIntersections(obstacles, this.polys);
-    return NavMesh._util.splice(this.polys, intersectedIndices);
+    return {
+      indices: intersectedIndices,
+      polys: NavMesh._util.splice(this.polys, intersectedIndices)
+    };
   };
 
   /**
@@ -982,7 +976,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
     // Set callbacks for worker promise object.
     workerPromise.then(function(worker) {
-      this.logger.log("navmesh", "Worker loaded.");
+      this.logger.log("navmesh:debug", "Worker promise returned.");
       this.worker = worker;
       this.worker.onmessage = this._getWorkerInterface();
       // Check if worker is already initialized.
@@ -991,6 +985,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
       this.logger.log("navmesh:warn", "Worker error:", Error);
       this.worker = false;
+    }.bind(this));
+
+    // Set up callback to update worker on navmesh update.
+    this.onUpdate(function(disregard, newPolys, removedIndices) {
+      if (this.worker && this.workerInitialized) {
+        this.worker.postMessage(["polyUpdate", newPolys, removedIndices]);
+      } else {
+        this.logger.log("navmesh:debug", "Worker not loaded yet.");
+      }
     }.bind(this));
   };
 
