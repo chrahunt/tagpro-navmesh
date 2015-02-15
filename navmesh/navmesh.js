@@ -51,9 +51,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Callback for path calculation requests.
    * @callback PathCallback
-   * @param {?Array.<PointLike>} - The calculated path. The goal point
-   *   is included at the end of the path. If no path is found then
-   *   null is passed to the callback.
+   * @param {?Array.<PointLike>} - The calculated path beginning with
+   *   the start point, and ending at the target point. If no path is
+   *   found then null is passed to the callback.
    */
 
   /**
@@ -77,23 +77,19 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
       source = Point.fromPointLike(source);
       target = Point.fromPointLike(target);
       path = this.pathfinder.aStar(source, target);
-      if (typeof path !== 'undefined' && path) {
-        // Remove first entry, which is current position.
-        path = path.slice(1);
-      }
       callback(path);
     }
   };
 
   /**
    * Check whether one point is visible from another, without being
-   * blocked by walls or (currently) spikes.
-   * @param {} p1 - The first point.
-   * @param {} p2 - The second point.
+   * blocked by obstacles.
+   * @param {PointLike} p1 - The first point.
+   * @param {PointLike} p2 - The second point.
    * @return {boolean} - Whether `p1` is visible from `p2`.
    */
   NavMesh.prototype.checkVisible = function(p1, p2) {
-    var edge = new Edge(p1, p2);
+    var edge = new Edge(Point.fromPointLike(p1), Point.fromPointLike(p2));
     var blocked = this.obstacle_edges.some(function(e) {return e.intersects(edge);});
     return !blocked;
   };
@@ -194,6 +190,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
+   * Set up the navmesh to listen to the relevant socket.
+   * @param  {Socket} socket - The socket to listen on for `mapupdate`
+   *   packets.
+   */
+  NavMesh.prototype.listen = function(socket) {
+    socket.on("mapupdate", this.mapUpdate.bind(this));
+  };
+
+  /**
    * A function called when the navigation mesh updates.
    * @callback UpdateCallback
    * @param {Array.<Poly>} - The polys defining the current navigation
@@ -241,7 +246,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     ids.forEach(function(id) {
       this.impassable[id] = true;
     }, this);
-    this.logger.log("Impassable after update:", this.impassable);
 
     if (updates.length > 0) {
       this.mapUpdate(updates);
@@ -302,8 +306,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     var areas = this._offsetPolys(navigation_static_objects);
 
     this.polys = areas.map(NavMesh._geometry.partitionArea);
-    // Flatten array.
-    this.polys = Array.prototype.concat.apply([], this.polys);
+    this.polys = NavMesh._util.flatten(this.polys);
 
     if (!this.worker) {
       this.pathfinder = new Pathfinder(this.polys);
@@ -311,18 +314,21 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
     this._setupDynamicObstacles(navigation_dynamic_objects);
 
-    // Keep track of original polygons, generate their edges in advance.
-    //this.original_polys = parsedMap.walls.concat(parsedMap.obstacles);
-    this.obstacle_edges = [];
-    //this.original_polys.forEach(function(poly) {
+    
+    // Hold the edges of static obstacles.
+    this.static_obstacle_edges = [];
     areas.forEach(function(area) {
       var polys = [area.polygon].concat(area.holes);
       polys.forEach(function(poly) {
         for (var i = 0, j = poly.numpoints - 1; i < poly.numpoints; j = i++) {
-          this.obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
+          this.static_obstacle_edges.push(new Edge(poly.points[j], poly.points[i]));
         }
       }, this);
     }, this);
+
+    // Holds the edges of static and dynamic obstacles.
+    this.obstacle_edges = this.static_obstacle_edges.slice();
+
     this.initialized = true;
   };
 
@@ -371,19 +377,52 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     // Location of dynamic obstacles.
     this.dynamic_obstacle_locations = [];
 
+    // Edges of offsetted obstacled, organized by id.
+    this.dynamic_obstacle_polys = {};
+
     // Container to hold initial obstacle states.
     var initial_states = [];
     obstacles.forEach(function(obstacle) {
+      var id = Point.toString(obstacle);
+
+      // Generate offset obstacle.
+      var obs = this._offsetDynamicObs([this._getTilePoly(obstacle)]);
+      var areas = NavMesh._geometry.getAreas(obs);
+      areas = areas.map(function(area) {
+        area.holes.push(area.polygon);
+        return area.holes;
+      });
+      areas = NavMesh._util.flatten(areas);
+      // Get edges of obstacle.
+      var edges = areas.map(function(poly) {
+        return poly.edges();
+      });
+      edges = NavMesh._util.flatten(edges);
+      this.dynamic_obstacle_polys[id] = edges;
+
       // Initialize obstacle states to all be passable.
-      this.obstacle_state[Point.toString(obstacle)] = true;
+      this.obstacle_state[id] = true;
       this.dynamic_obstacle_locations.push(Point.fromPointLike(obstacle));
       initial_states.push(obstacle);
     }, this);
 
     // Set up already-known dynamic impassable values.
-    this.setImpassable([10, 5, 14, 15, 9.1]);
+    this.setImpassable([10, 5, 9.1]);
     // Walls and spikes.
     this.setImpassable([1, 1.1, 1.2, 1.3, 1.4, 7]);
+
+    // Set up callback to regenerate obstacle edges for visibility checking.
+    this.onUpdate(function(polys) {
+      var obstacle_edges = [];
+      for (id in this.obstacle_state) {
+        if (!this.obstacle_state[id]) {
+          Array.prototype.push.apply(
+            obstacle_edges,
+            this.dynamic_obstacle_polys[id]);
+        }
+      }
+      this.obstacle_edges = this.static_obstacle_edges.concat(obstacle_edges);
+    }.bind(this));
 
     // Initialize mapupdate with already-present dynamic obstacles.
     this.mapUpdate(initial_states);
@@ -583,7 +622,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
     // Offset the obstacle polygons.
     var offsettedObstacles = this._offsetDynamicObs(obstaclePolys);
-    var obstacleAreas = NavMesh._geometry.getAreas(offsettedObstacles, scale);
+    var obstacleAreas = NavMesh._geometry.getAreas(offsettedObstacles);
 
     // Get convex partition of new obstacle areas for finding
     // intersections.
@@ -951,15 +990,6 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
         this._workerLogger(data.slice(1));
       } else if (name == "result") {
         var path = data[1];
-
-        if (path) {
-          // Convert Path back to points.
-          /*path = path.map(function(location) {
-            return new Point(location.x, location.y);
-          });*/
-          // Remove first entry, which is current position.
-          path = path.slice(1);
-        }
         this.lastCallback(path);
       } else if (name == "initialized") {
         this.workerInitialized = true;
@@ -1285,7 +1315,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    */
   NavMesh._geometry.partitionAreas = function(areas) {
     var polys = areas.map(NavMesh._geometry.partitionArea);
-    return Array.prototype.concat.apply([], polys);
+    return NavMesh._util.flatten(polys);
   }
 
   /**
@@ -1387,6 +1417,15 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
     } else {
       return 0;
     }
+  }
+
+  /**
+   * Take an array of arrays and flatten it.
+   * @param  {Array.<Array.<*>>} ary - The array to flatten.
+   * @return {Array.<*>} - The flattened array.
+   */
+  NavMesh._util.flatten = function(ary) {
+    return Array.prototype.concat.apply([], ary);
   }
 
   // From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/round

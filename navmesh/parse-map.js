@@ -1,4 +1,6 @@
 /**
+ *
+ * @private
  * @module MapParser
  */
 define(['./action-values', './polypartition'],

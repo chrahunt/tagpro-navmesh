@@ -35,10 +35,12 @@ module.exports = function(grunt) {
     pkg: grunt.file.readJSON('package.json'),
     jsdoc : {
       dist : {
-        src: ['navmesh/**/*.js'],
+        src: ['navmesh/**/*.js', 'README.md'],
         options: {
           destination: 'doc',
-          configure: 'conf.json'
+          configure: 'conf.json',
+          private: false//,
+          //template: 'node_modules/grunt-jsdoc/node_modules/'
         }
       }
     },
