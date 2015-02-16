@@ -497,6 +497,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Get a polygon corresponding to the dimensions and location of the
    * provided tile update.
+   * @private
    * @param {TileUpdate} tile - The tile update information.
    * @return {Poly} - The polygon representing the tile.
    */
@@ -1015,12 +1016,14 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Initialized Clipper for operations.
+   * @private
    * @type {ClipperLib.Clipper}
    */
   NavMesh._geometry.cpr = new ClipperLib.Clipper();
 
   /**
    * Initialized ClipperOffset for operations.
+   * @private
    * @type {ClipperLib.ClipperOffset}
    */
   NavMesh._geometry.co = new ClipperLib.ClipperOffset();
@@ -1033,6 +1036,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Get a polygonal approximation of a circle of a given radius
    * centered at the provided point. Vertices of polygon are in CW
    * order.
+   * @private
    * @param {number} radius - The radius for the polygon.
    * @param {Point} [point] - The point at which to center the polygon.
    *   If a point is not provided then the polygon is centered at the
@@ -1067,6 +1071,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Returns a square with side length given by double the provided
    * radius, centered at the origin. Vertices of polygon are in CW
    * order.
+   * @private
    * @param {number} radius - The length of half of one side.
    * @return {Poly} - The constructed square.
    */
@@ -1083,6 +1088,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Get the upper or lower diagonal of a square of the given
    * radius. 
+   * @private
    * @param {number} radius - The length of half of one side of the
    *   square to get the diagonal of.
    * @param {string} corner - One of ne, se, nw, sw indicating which
@@ -1105,6 +1111,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Given two sets of polygons, return indices of the ones in the blue
    * set that are intersected by ones in red.
+   * @private
    * @param {Array.<Poly>} red
    * @param {Array.<Poly>} blue
    * @return {Array.<integer>} - The indices of the intersected blue
@@ -1140,6 +1147,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Given a PolyTree, return an array of areas assuming even-odd fill
    * ordering.
+   * @private
    * @param {ClipperLib.Paths} paths - The paths output from some
    *   operation. Paths should be non-overlapping, i.e. the edges of
    *   represented polygons should not be overlapping, but polygons
@@ -1206,6 +1214,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * Offset a polygon inwards (as opposed to deflating it). The polygon
    * vertices should be in CCW order and the polygon should already be
    * scaled.
+   * @private
    * @param {CLShape} shape - The shape to inflate inwards.
    * @param {number} offset - The amount to offset the shape.
    * @param {integer} [scale=100] - The scale for the operation.
@@ -1261,6 +1270,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Offset a polygon. The polygon vertices should be in CW order and
    * the polygon should already be scaled up.
+   * @private
    * @param {CLShape} shape - The shape to inflate outwards.
    * @param {number} offset - The amount to offset the shape.
    * @param {integer} [scale=100] - The scale for the operation.
@@ -1390,6 +1400,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * Removes and returns the items at the indices identified in
    * `indices`.
+   * @private
    * @param {Array} ary - The array to remove items from.
    * @param {Array.<integer>} indices - The indices from which to
    *   remove the items from in ary. Indices should be unique and
@@ -1421,6 +1432,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
 
   /**
    * Take an array of arrays and flatten it.
+   * @private
    * @param  {Array.<Array.<*>>} ary - The array to flatten.
    * @return {Array.<*>} - The flattened array.
    */

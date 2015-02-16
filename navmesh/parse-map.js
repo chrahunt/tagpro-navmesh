@@ -1,6 +1,5 @@
 /**
- *
- * @private
+ * @ignore
  * @module MapParser
  */
 define(['./action-values', './polypartition'],
@@ -11,12 +10,12 @@ function(  ActionValues,      pp) {
   /**
    * Contains utilities for generating usable map representations from
    * map tiles.
-   * @alias module:MapParser
    */
   var MapParser = {};
 
   /**
    * An object with x and y properties that represents a coordinate pair.
+   * @private
    * @typedef MPPoint
    * @type {object}
    * @property {number} x - The x coordinate of the location.
@@ -25,6 +24,7 @@ function(  ActionValues,      pp) {
 
   /**
    * A Shape is an array of points, where points are objects with x and y properties which represent coordinates on the map.
+   * @private
    * @typedef MPShape
    * @type {Array.<MPPoint>}
    */
@@ -32,6 +32,7 @@ function(  ActionValues,      pp) {
   /**
    * An object with r and c properties that represents a row/column
    * location in a 2d array.
+   * @private
    * @typedef ArrayLoc
    * @type {object}
    * @property {integer} r - The row number of the array location.
@@ -64,12 +65,14 @@ function(  ActionValues,      pp) {
    * filled. The tiles available force the diagonals of each quadrant to
    * point to the center, so this is sufficient for describing all
    * possible overlappings.
+   * @private
    * @typedef Cell
    * @type {Array.<number>}
    */
 
   /**
    * Callback that receives each of the elements in the 2d map function.
+   * @private
    * @callback mapCallback
    * @param {*} - The element from the 2d array.
    * @return {*} - The transformed element.
@@ -77,6 +80,7 @@ function(  ActionValues,      pp) {
 
   /**
    * Applies `fn` to every individual element of the 2d array `arr`.
+   * @private
    * @param {Array.<Array.<*>>} arr - The 2d array to use.
    * @param {mapCallback} fn - The function to apply to each element.
    * @return {Array.<Array.<*>>} - The 2d array after the function
@@ -92,6 +96,7 @@ function(  ActionValues,      pp) {
    * Returns 1 if a tile value is one that we want to consider as
    * a wall (we consider empty space to be a wall), or the tile value
    * itself for diagonal walls. 0 is returned otherwise.
+   * @private
    * @param {number} elt - The tile value at a row/column location
    * @return {number} - The number to insert in place of the tile value.
    */
@@ -114,6 +119,7 @@ function(  ActionValues,      pp) {
   /**
    * Converts the provided array into its equivalent representation
    * using cells.
+   * @private
    * @param {MapTiles} arr - 
    * @param {Array.<Array.<Cell>>} - The converted array.
    */
@@ -151,6 +157,7 @@ function(  ActionValues,      pp) {
 
   /**
    * Callback function for testing equality of items.
+   * @private
    * @callback comparisonCallback
    * @param {*} - The first item.
    * @param {*} - The second item.
@@ -159,6 +166,7 @@ function(  ActionValues,      pp) {
 
   /**
    * Returns the location of obj in arr with equality determined by cmp.
+   * @private
    * @param {Array.<*>} arr - The array to be searched.
    * @param {*} obj - The item to find a match for.
    * @param {comparisonCallback} cmp - The callback that defines
@@ -180,6 +188,7 @@ function(  ActionValues,      pp) {
   /**
    * Compare two objects defining row/col locations in an array
    * and return true if they represent the same row/col location.
+   * @private
    * @param {ArrayLoc} elt1
    * @param {ArrayLoc} elt2
    * @return {boolean} - Whether or not these two array locations
@@ -193,6 +202,7 @@ function(  ActionValues,      pp) {
    * Takes in the vertex/action information and returns an array of arrays,
    * where each array corresponds to a shape and each element of the array is
    * a vertex which is connected to it's previous and next neighbor (circular).
+   * @private
    * @param {} actionInfo
    * @return {Array.<Array<ArrayLoc>>} - Array of vertex locations in 
    */
@@ -373,6 +383,7 @@ function(  ActionValues,      pp) {
   /**
    * Convert an array location to a point representing the top-left
    * corner of the tile in global coordinates.
+   * @private
    * @param {ArrayLoc} location - The array location to get the
    *   coordinates for.
    * @return {MPPoint} - The coordinates of the tile.
@@ -387,6 +398,7 @@ function(  ActionValues,      pp) {
   /**
    * Takes in an array of shapes and converts from contour grid layout
    * to actual coordinates.
+   * @private
    * @param {Array.<Array.<ArrayLoc>>} shapes - output from generateShapes
    * @return {Array.<Array.<{{x: number, y: number}}>>}
    */
@@ -573,6 +585,7 @@ function(  ActionValues,      pp) {
 
   /**
    * Convert shapes into polys.
+   * @private
    * @param {Array.<Shape>} shapes - The shapes to be converted.
    * @return {Array.<Poly>} - The converted shapes.
    */

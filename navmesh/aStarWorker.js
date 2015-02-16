@@ -1,3 +1,7 @@
+/**
+ * Pathfinding web worker implementation.
+ * @ignore
+ */
 require(['./pathfinder', './polypartition'],
 function(   Pathfinder,     pp) {
   var Point = pp.Point;
@@ -7,12 +11,14 @@ function(   Pathfinder,     pp) {
   /**
    * Object with utility methods for converting objects from serialized
    * message form into the required objects.
+   * @private
    */
   var Convert = {};
 
   /**
    * The format of a Point as serialized by the Web Worker message-
    * passing interface.
+   * @private
    * @typedef {object} PointObj
    * @property {number} x
    * @property {number} y
@@ -20,6 +26,7 @@ function(   Pathfinder,     pp) {
 
   /**
    * Convert serialized Point object back to Point.
+   * @private
    * @param {PointObj} obj - The serialized Point object.
    */
   Convert.toPoint = function(obj) {
@@ -29,6 +36,7 @@ function(   Pathfinder,     pp) {
   /**
    * The format of a Poly as serialized by the Web Worker message-
    * passing interface.
+   * @private
    * @typedef {object} PolyObj
    * @property {Array.<PointObj>} points - The array of serialized
    *   Points.
@@ -38,6 +46,7 @@ function(   Pathfinder,     pp) {
 
    /**
     * Convert serialized Poly object back to Poly.
+    * @private
     * @param {PolyObj} obj - The serialized Poly object.
     */
   Convert.toPoly = function(obj) {
@@ -53,6 +62,7 @@ function(   Pathfinder,     pp) {
   /**
    * Sends message to parent to be logged to console. Takes same
    * arguments as Bragi logger.
+   * @private
    * @param {string} group - The group to associate the message with.
    * @param {...*} - arbitrary arguments to be passed back to the parent
    *   logging function.
@@ -86,6 +96,7 @@ function(   Pathfinder,     pp) {
 
   /**
    * Set up various actions to take on communication.
+   * @private
    * @param {Array} e - An array with the first element being a string
    *   identifier for the message type, and subsequent elements being
    *   arguments to be passed to the relevant function. Message types:

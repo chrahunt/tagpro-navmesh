@@ -73,14 +73,34 @@ function(poly2tri) {
     return new Point(this.x * f, this.y * f);
   }
 
+  /**
+   * Takes a scalar value and divides each parameter of the point
+   * by the scalar.
+   * @param  {number} f - The number to divide the parameters by.
+   * @return {Point} - A new point with the calculated coordinates.
+   */
   Point.prototype.div = function(f) {
     return new Point(this.x / f, this.y / f);
   }
 
+  /**
+   * Takes another point and returns a boolean indicating whether the
+   * points are equal. Two points are equal if their parameters are
+   * equal.
+   * @param  {Point} p - The point to check equality against.
+   * @return {boolean} - Whether or not the two points are equal.
+   */
   Point.prototype.eq = function(p) {
     return (this.x == p.x && this.y == p.y);
   }
 
+  /**
+   * Takes another point and returns a boolean indicating whether the
+   * points are not equal. Two points are considered not equal if their
+   * parameters are not equal.
+   * @param  {Point} p - The point to check equality against.
+   * @return {boolean} - Whether or not the two points are not equal.
+   */
   Point.prototype.neq = function(p) {
     return (this.x != p.x || this.y != p.y);
   }
@@ -138,7 +158,6 @@ function(poly2tri) {
     return new Point(this.x, this.y);
   };
 
-  //// EDGE ////
   /**
    * Edges are used to represent the border between two adjacent
    * polygons.
@@ -173,8 +192,6 @@ function(poly2tri) {
     return (this._CCW(this.p1, q1, q2) != this._CCW(this.p2, q1, q2)) && (this._CCW(this.p1, this.p2, q1) != this._CCW(this.p1, this.p2, q2));
   }
 
-
-  //// POLY ////
   /**
    * Polygon class.
    * Can be initialized with an array of points.
