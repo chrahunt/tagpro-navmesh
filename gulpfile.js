@@ -6,7 +6,8 @@ var gulp = require('gulp'),
     gutil = require('gulp-util'),
     rename = require('gulp-rename'),
     source = require('vinyl-source-stream'),
-    assign = require('lodash.assign');
+    assign = require('lodash.assign'),
+    derequire = require('gulp-derequire');
 
 var sources = 'src/navmesh.js';
 var dirs = {
@@ -24,6 +25,7 @@ function bundle(sources, dest) {
                 })
                 .bundle()
                 .pipe(source(entry.replace(/^src\//, '')))
+                .pipe(derequire())
                 .pipe(gulp.dest(dest));
         });
         return es.merge(streams);
@@ -40,6 +42,7 @@ gulp.task('build-dev', function() {
                 })
                 .bundle()
                 .pipe(source(entry.replace(/^src\//, '')))
+                .pipe(derequire())
                 .pipe(gulp.dest(dirs.dev));
         });
         return es.merge(streams);
@@ -58,6 +61,7 @@ function watchifyFile(src, out) {
         return b.bundle()
             .on('error', gutil.log.bind(gutil, "Browserify Error"))
             .pipe(source(src.replace(/^src\//, '')))
+            .pipe(derequire())
             .pipe(gulp.dest(out));
     }
     b.on('update', bundle);
@@ -84,6 +88,7 @@ gulp.task('build-prod', function() {
                 })
                 .bundle()
                 .pipe(source(entry.replace(/^src\//, '')))
+                .pipe(derequire())
                 .pipe(gulp.dest(dirs.release));
         });
         return es.merge(streams);
