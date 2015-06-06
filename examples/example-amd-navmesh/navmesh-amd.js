@@ -33,8 +33,8 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
 
     navmesh.calculatePath(startPoint, endPoint, function(path) {
       if (path) {
-        DrawUtils.drawPoly(PolyUtils.findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
-        DrawUtils.drawPoly(PolyUtils.findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
+        DrawUtils.drawPoly(findPolyForPoint(endPoint, navmesh.polys), canvas, 'red');
+        DrawUtils.drawPoly(findPolyForPoint(startPoint, navmesh.polys), canvas, 'pink');
         path.unshift(startPoint);
         DrawUtils.drawPath(path, canvas);
       } else {
@@ -50,7 +50,7 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
   var navmesh = new NavMesh(tiles, Logger);
   var Point = NavMesh.poly.Point;
   var Poly = NavMesh.poly.Poly;
-  var PolyUtils = NavMesh.poly.PolyUtils;
+  var findPolyForPoint = NavMesh.poly.util.findPolyForPoint;
 
   var canvas = document.getElementById('c');
   DrawUtils.initCanvasForTiles(canvas, tiles);
@@ -78,7 +78,7 @@ function( NavMesh,   TileGrids,    DrawUtils,   Logger) {
   document.getElementById('c').addEventListener('click', function(evt) {
     var p = getCanvasPointClicked(evt, this);
     var shift = evt.shiftKey;
-    var poly = PolyUtils.findPolyForPoint(p, navmesh.polys);
+    var poly = findPolyForPoint(p, navmesh.polys);
     if (poly) {
       if (shift) {
         endPoint = p;

@@ -3,7 +3,10 @@ module.exports = function(grunt) {
   var build = {
     options: {
       baseUrl: 'navmesh',
-      name: '../tools/build/almond'
+      name: '../tools/build/almond',
+      generateSourceMaps: true,
+      preserveLicenseComments: false,
+      optimize: 'uglify2'
     },
     // Build configuration for the web worker.
     worker: {
@@ -51,7 +54,7 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-requirejs');
 
   // Default task(s).
-  grunt.registerTask('default', ['uglify']);
+  grunt.registerTask('default', ['uglify2']);
   grunt.registerTask('build', function() {
     grunt.task.run('requirejs:worker');
     grunt.task.run('requirejs:app');

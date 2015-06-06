@@ -9,7 +9,7 @@
     <p>Warning, if selected points aren't connected, the page may freeze for several seconds.</p>
     <span id="redraw"></span>
     <canvas id="c"></canvas>
-    <script src="../../build/navmesh.min.js"></script>
+    <script src="../../build/dev/navmesh.js"></script>
     <script src="../common/bragi-browser.js"></script>
     <script src="../common/tile-grids.js"></script>
     <script src="../common/drawutils.js"></script>
@@ -51,7 +51,7 @@
 
       // Set names for useful classes.
       var Point = NavMesh.poly.Point;
-      var PolyUtils = NavMesh.poly.PolyUtils;
+      var PolyUtils = NavMesh.poly.util;
 
       var canvas = document.getElementById('c');
       DrawUtils.initCanvasForTiles(canvas, tiles);
