@@ -30,11 +30,8 @@ function bundle(sources, dest) {
     });
 }
 
-gulp.task('build-worker', function() {
-
-});
 gulp.task('build-dev', function() {
-    var bundle = glob(sources, function (err, files) {
+    return glob(sources, function (err, files) {
         var streams = files.map(function (entry) {
             return browserify({
                     entries: entry,
@@ -47,7 +44,6 @@ gulp.task('build-dev', function() {
         });
         return es.merge(streams);
     });
-    return bundle;
 });
 
 // Compile and watchify sourced file.
@@ -59,8 +55,7 @@ function watchifyFile(src, out) {
     });
     var b = watchify(browserify(opts));
     function bundle() {
-        return b.transform('brfs')
-            .bundle()
+        return b.bundle()
             .on('error', gutil.log.bind(gutil, "Browserify Error"))
             .pipe(source(src.replace(/^src\//, '')))
             .pipe(gulp.dest(out));

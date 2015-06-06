@@ -1,6 +1,6 @@
 {
   "name": "tagpro-navmesh",
-  "version": "0.9.0-alpha",
+  "version": "0.9.5",
   "author": {
     "name": "Chris Hunt",
     "email": "chrahunt@gmail.com",
@@ -13,7 +13,6 @@
     "event-stream": "^3.3.1",
     "glob": "^5.0.10",
     "grunt": "^0.4.5",
-    "grunt-contrib-requirejs": "^0.4.4",
     "grunt-jsdoc": "^0.5.8",
     "gulp": "^3.9.0",
     "gulp-rename": "^1.2.2",
@@ -21,19 +20,21 @@
     "jsdoc": "^3.3.0-beta1",
     "lodash.assign": "^3.2.0",
     "vinyl-source-stream": "^1.1.0",
-    "watchify": "^3.2.1"
+    "watchify": "^3.2.1",
+    "workerify": "^0.3.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/chrahunt/tagpro-navmesh"
   },
-  "main": "index.js",
+  "main": "build/release/navmesh.js",
   "dependencies": {
     "js-priority-queue": "^0.1.1"
   },
   "browserify": {
     "transform": [
-      "browserify-shim"
+      "browserify-shim",
+      "workerify"
     ]
   },
   "browserify-shim": {

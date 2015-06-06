@@ -6,7 +6,6 @@ var Edge = geo.Edge;
 
 var MapParser = require('./parse-map');
 var Pathfinder = require('./pathfinder');
-var workerPromise = require('./worker');
 
 require('math-round');
 var ClipperLib = require('jsclipper');
@@ -306,7 +305,7 @@ NavMesh.prototype._init = function(parsedMap) {
   var navigation_static_objects = {
     walls: parsedMap.walls,
     obstacles: parsedMap.static_obstacles
-  }
+  };
   var navigation_dynamic_objects = parsedMap.dynamic_obstacles;
 
   // Offset polys from side so they represent traversable area.
@@ -315,7 +314,7 @@ NavMesh.prototype._init = function(parsedMap) {
   this.polys = areas.map(NavMesh._geometry.partitionArea);
   this.polys = NavMesh._util.flatten(this.polys);
 
-  if (!this.worker) {
+  if (!this.workerInitialized) {
     this.pathfinder = new Pathfinder(this.polys);
   }
 
@@ -941,21 +940,11 @@ NavMesh.prototype._offsetPolys = function(static_objects, offset) {
  */
 NavMesh.prototype._setupWorker = function() {
   // Initial state.
-  this.worker = false;
+  this.worker = new Worker('./aStarWorker.js');
+  this.worker.onmessage = this._getWorkerInterface();
+  // Check if worker is already initialized.
+  this.worker.postMessage(["isInitialized"]);
   this.workerInitialized = false;
-
-  // Set callbacks for worker promise object.
-  workerPromise.then(function(worker) {
-    this.logger.log("navmesh:debug", "Worker promise returned.");
-    this.worker = worker;
-    this.worker.onmessage = this._getWorkerInterface();
-    // Check if worker is already initialized.
-    this.worker.postMessage(["isInitialized"]);
-  }.bind(this), function(Error) {
-    this.logger.log("navmesh:warn", "No worker, falling back to in-thread computation.");
-    this.logger.log("navmesh:warn", "Worker error:", Error);
-    this.worker = false;
-  }.bind(this));
 
   // Set up callback to update worker on navmesh update.
   this.onUpdate(function(disregard, newPolys, removedIndices) {

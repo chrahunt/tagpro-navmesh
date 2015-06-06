@@ -5,9 +5,6 @@ var geo = require('./geometry');
  * Pathfinding web worker implementation.
  * @ignore
  */
-module.exports = function () {
-
-
 var Point = geo.Point;
 var Poly = geo.Poly;
 
@@ -144,5 +141,3 @@ onmessage = function(e) {
 Logger.log("worker", "Worker loaded.");
 // Sent confirmation that worker is initialized.
 postMessage(["initialized"]);
-
-};
